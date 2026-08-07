@@ -29,21 +29,29 @@ cd lane-mcp
 ./setup.sh
 ```
 
-`setup.sh` will find a Node 20+, install & build, ask for your Lane token, and
-print — and optionally wire up — the config for Claude Code and Claude Desktop.
+`setup.sh` finds a Node 20+, installs & builds, asks for your Lane token, and
+wires up whichever client(s) you choose. The two clients run the server
+differently (see below), but you don't have to think about it — `setup.sh` does
+the right thing for each.
 
 ### Get your token
 
 In Lane: **Settings → Connect Claude → Generate token**. Copy it (shown once) and
 paste it when `setup.sh` asks.
 
-## Launch
+## The two clients
 
-- **Claude Code** — let `setup.sh` run `claude mcp add`, or copy the printed
-  command. Then ask Claude: *"list my Lane workspaces."*
-- **Claude Desktop** — let `setup.sh` merge the config, or paste the printed JSON
-  into `~/Library/Application Support/Claude/claude_desktop_config.json`. **Fully
-  quit and reopen** Claude Desktop (it only reads the config on launch).
+- **Claude Code** runs the server as a small **local HTTP daemon** on
+  `localhost` and connects to it as an HTTP MCP server. `setup.sh` installs a
+  `launchd` agent so the daemon **auto-starts at login and stays running**, then
+  runs `claude mcp add --transport http lane http://localhost:7337/mcp`.
+  (Claude Code's enterprise policy permits HTTP-on-`localhost` servers, so this
+  is the supported path — not stdio.)
+- **Claude Desktop** spawns the server itself over **stdio**; `setup.sh` merges
+  the config into `~/Library/Application Support/Claude/claude_desktop_config.json`.
+  **Fully quit and reopen** Claude Desktop afterwards (it reads config on launch).
+
+Then ask Claude: *"list my Lane workspaces."*
 
 ## How it works
 
@@ -66,25 +74,32 @@ own access — every read and write is row-level-security scoped to your account
 
 ## Troubleshooting
 
+- **Claude Code: `lane` not connected** — the daemon may not be running. Check
+  `launchctl list | grep lane-mcp`, restart it with
+  `launchctl kickstart -k gui/$(id -u)/com.iamlane.lane-mcp`, and read
+  `~/Library/Logs/lane-mcp.log`. The Claude Code URL **must** use hostname
+  `localhost` (not `127.0.0.1`) — enterprise policy allows the former only.
 - **"Server disconnected" in Claude Desktop** — almost always an old Node on the
   app's launch PATH. `setup.sh` pins an absolute Node 20+ path in the config; if
-  you edited the config by hand, make sure `command` points at a Node 20+ binary
-  (e.g. `/opt/homebrew/bin/node`), not a bare `node`/`npx`.
+  you edited it by hand, make sure `command` points at a Node 20+ binary
+  (e.g. `/opt/homebrew/bin/node`), not a bare `node`/`npx`. Logs:
+  `~/Library/Logs/Claude/mcp-server-lane.log`.
 - **"Lane rejected this token"** — regenerate one in Settings → Connect Claude
   and re-run `setup.sh`.
 - **Connection errors** — check `LANE_API_URL` is reachable
   (`https://app.iamlane.com` by default). If it points at a local dev server,
   that server has to be running.
-- **Logs** — Claude Desktop: `~/Library/Logs/Claude/mcp-server-lane.log`.
 
 ## Configuration
 
-`setup.sh` handles this; for reference the server reads two env vars:
+`setup.sh` handles this; for reference the server reads:
 
 | Var | Default | Meaning |
 | --- | --- | --- |
 | `LANE_MCP_TOKEN` | _(required)_ | Your Lane personal access token. |
 | `LANE_API_URL` | `https://app.iamlane.com` | Which Lane app to connect to. |
+| `LANE_MCP_TRANSPORT` | `stdio` | `stdio` (Desktop) or `http` (Claude Code daemon). |
+| `LANE_MCP_PORT` | `7337` | Port for the HTTP daemon (bound to `localhost`). |
 
 ---
 

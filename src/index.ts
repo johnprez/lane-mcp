@@ -4,21 +4,32 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { loadConfig } from "./config.js";
 import { LaneSession } from "./session.js";
 import { registerLaneTools } from "./tools.js";
+import { serveHttp } from "./http.js";
 
 /**
- * Lane local MCP server. Runs on the teammate's machine over stdio and connects
- * to their Lane workspace with their own PAT: reads go direct to Supabase (RLS),
- * writes go to Lane's hosted, HMAC-signed write endpoint. No server-side secrets
- * ever live on this machine.
+ * Lane local MCP server. Runs on the teammate's machine and connects to their
+ * Lane workspace with their own PAT: reads go direct to Supabase (RLS), writes
+ * go to Lane's hosted, HMAC-signed write endpoint. No server-side secrets ever
+ * live on this machine.
+ *
+ * Two transports (see config): stdio for Claude Desktop, or a loopback HTTP
+ * daemon for Claude Code (where enterprise policy blocks stdio servers).
  */
 function main() {
-  let session: LaneSession;
+  let config;
   try {
-    session = new LaneSession(loadConfig());
+    config = loadConfig();
   } catch (error) {
     // stderr surfaces in the MCP client's server logs.
     console.error(`[lane-mcp] ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
+  }
+
+  const session = new LaneSession(config);
+
+  if (config.transport === "http") {
+    serveHttp(session, { host: config.host, port: config.port });
+    return;
   }
 
   serveStdio(() => {
