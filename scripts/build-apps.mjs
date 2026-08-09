@@ -74,7 +74,15 @@ code.chip { display:inline-block; padding:2px 7px; border-radius:6px; background
 
 /* Tiles (dashboard) */
 .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:8px; margin-top:12px; }
-.tile { border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--subtle); display:flex; flex-direction:column; gap:2px; }
+.tile { appearance:none; text-align:left; cursor:pointer; font:inherit; color:inherit; border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--subtle); display:flex; flex-direction:column; gap:2px; transition:border-color 120ms ease; }
+.tile:hover { border-color:color-mix(in srgb, var(--purple) 40%, var(--line)); }
+.tile-on { border-color:var(--purple); box-shadow:0 0 0 2px color-mix(in srgb, var(--purple) 20%, transparent); }
+.row-btn { appearance:none; width:100%; border:0; background:transparent; font:inherit; text-align:left; cursor:pointer; color:inherit; }
+.row-btn:hover { background:var(--subtle); }
+.drill { margin-top:12px; border:1px solid var(--line); border-radius:12px; padding:10px 12px; background:var(--subtle); }
+.drill-head { display:flex; align-items:center; justify-content:space-between; }
+.drill-head h2 { margin:0; }
+.drill .list { margin-top:8px; background:var(--card-bg); }
 .tile .n { font-size:22px; font-weight:760; letter-spacing:-.02em; }
 .tile .l { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-weight:650; }
 .tile.warn-red { border-color:color-mix(in srgb, var(--red) 45%, var(--line)); }
@@ -135,6 +143,8 @@ textarea { resize:vertical; }
 .note-body { font-size:12.5px; color:var(--ink); white-space:pre-wrap; word-break:break-word; }
 .link-btn { appearance:none; border:0; background:transparent; color:var(--muted); font:inherit; font-size:11.5px; font-weight:600; cursor:pointer; padding:2px 4px; }
 .link-btn:hover { color:var(--red); }
+.link-a { flex:1; min-width:0; color:var(--purple); font-size:12.5px; font-weight:600; text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.link-a:hover { text-decoration:underline; }
 .addrow { display:flex; gap:8px; align-items:flex-start; margin-top:10px; }
 .addrow input, .addrow textarea { flex:1; }
 `;

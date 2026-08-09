@@ -59,6 +59,7 @@ const CONTEXT_ROW_LIMITS = {
   assignments: 2_000,
   notes: 400,
   dependencies: 1_000,
+  links: 500,
 } as const;
 
 function compactText(value: unknown, maximum: number): unknown {
@@ -136,11 +137,12 @@ export type LaneContext = {
   assignments: Record<string, LaneContextRow[]>;
   notes: Record<string, LaneContextRow[]>;
   dependencies: LaneContextRow[];
+  links: LaneContextRow[];
 };
 
 const EMPTY_CONTEXT: LaneContext = {
   projects: [], lanes: [], phases: [], milestones: [], activities: [], tasks: [],
-  events: [], people: [], roles: [], groups: [], assignments: {}, notes: {}, dependencies: [],
+  events: [], people: [], roles: [], groups: [], assignments: {}, notes: {}, dependencies: [], links: [],
 };
 
 /**
@@ -190,7 +192,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     version: project.version,
     updated_at: project.updated_at,
   }));
-  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies] = await Promise.all([
+  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies, links] = await Promise.all([
     db.from("workstreams").select("id, project_id, name, description, status, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.lanes),
     db.from("project_phases").select("id, project_id, name, description, starts_on, ends_on, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.phases),
     db.from("milestones").select("id, project_id, title, description, status, target_date, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.milestones),
@@ -214,6 +216,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     db.from("milestone_notes").select("id, project_id, milestone_id, body, version, created_by, updated_by, created_at, updated_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
     db.from("planning_event_notes").select("id, project_id, event_id, body, version, created_by, updated_by, created_at, updated_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
     db.from("work_item_dependencies").select("project_id, predecessor_id, successor_id, lag_days, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.dependencies),
+    db.from("plan_object_links").select("id, project_id, object_type, object_id, url, label, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.links),
   ]);
   // A complete plan needs its structural records. The enrichment reads below are
   // valuable but cannot prevent understanding a plan when a newly deployed
@@ -241,6 +244,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const milestoneNoteRows = optionalContext("milestone-notes", milestoneNotes, []);
   const eventNoteRows = optionalContext("event-notes", eventNotes, []);
   const dependencyRows = optionalContext("dependencies", dependencies, []);
+  const linkRows = optionalContext("links", links, []);
   return {
     projects: projectContext as unknown as LaneContextRow[],
     lanes: compactRows((lanes.data ?? []) as LaneContextRow[], CONTEXT_ROW_LIMITS.lanes),
@@ -268,5 +272,6 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
       events: compactRows(eventNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
     },
     dependencies: compactRows(dependencyRows ?? [], CONTEXT_ROW_LIMITS.dependencies),
+    links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links),
   };
 }

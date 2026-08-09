@@ -8,13 +8,18 @@ through Lane's own API authenticated as you.
 
 ## What you get
 
-Three tools, driven by your Claude:
+Tools driven by your Claude, plus **interactive cards** in Claude Desktop
+(dashboards, an approval card, quick create-forms, and a full tabbed activity
+editor — see [CONNECT.md](./CONNECT.md#interactive-cards)). Clients that don't
+support cards fall back to plain text.
 
 | Tool | Does |
 | --- | --- |
 | `lane_list_workspaces` | Your workspaces, role, and which is active. |
-| `lane_get_context` | Your plan graph — projects, milestones, activities, people, etc. Returns a readable summary **and** structured data Claude can turn into tables/timelines. |
+| `lane_get_context` | Your plan graph — projects, milestones, activities, people, links, etc. Readable summary **and** structured data. |
 | `lane_apply_action` | Create / update / delete one Lane object. Supports `preview` to see a change before applying it. |
+| `lane_render_form` | Open an inline form to create a milestone, event, task, note, or link. |
+| `lane_edit_activity` | Open the full activity editor (Details / Tasks / Notes / Links), create or edit. |
 
 ## Prerequisites
 

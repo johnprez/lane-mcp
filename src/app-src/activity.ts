@@ -18,6 +18,7 @@ type Ctx = {
   activities?: Row[]; tasks?: Row[]; lanes?: Row[]; milestones?: Row[]; people?: Row[]; groups?: Row[];
   assignments?: { activities?: Row[]; activityGroups?: Row[] };
   notes?: { activities?: Row[] };
+  links?: Row[];
 };
 type Tab = "details" | "tasks" | "notes" | "links";
 
@@ -39,6 +40,7 @@ const tasksFor = (): Row[] => (ctx.tasks ?? []).filter((t) => str(t.work_item_id
 const notesFor = (): Row[] => (ctx.notes?.activities ?? []).filter((n) => str(n.work_item_id) === activityId);
 const ownerPeople = (): string[] => (ctx.assignments?.activities ?? []).filter((o) => str(o.work_item_id) === activityId).map((o) => str(o.person_id));
 const ownerGroups = (): string[] => (ctx.assignments?.activityGroups ?? []).filter((o) => str(o.work_item_id) === activityId).map((o) => str(o.group_id));
+const linksFor = (): Row[] => (ctx.links ?? []).filter((l) => str(l.object_type) === "work_item" && str(l.object_id) === activityId);
 
 async function reload(): Promise<void> {
   if (!projectId) return;
@@ -172,7 +174,13 @@ function notesTab(): string {
 
 function linksTab(): string {
   if (!activityId) return childHint("links");
-  return `<p class="muted-s">Attach a link to this activity.</p>` +
+  const rows = linksFor().map((l) => {
+    const url = str(l.url);
+    const label = str(l.label) || url;
+    return `<div class="item"><a class="link-a" href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>` +
+      `<button class="link-btn" data-link-del="${esc(str(l.id))}" data-v="${num(l.version)}">Remove</button></div>`;
+  }).join("") || '<div class="item"><span class="item-meta">No links yet.</span></div>';
+  return `<div class="list">${rows}</div>` +
     `<div class="field"><label class="flabel" for="new_link_url">URL</label><input id="new_link_url" type="text" placeholder="https://…"></div>` +
     `<div class="field"><label class="flabel" for="new_link_label">Label</label><input id="new_link_label" type="text"></div>` +
     `<div class="actions"><button class="btn btn-primary" id="add_link">Add link</button></div>`;
@@ -192,7 +200,7 @@ function render(): void {
     `<button class="tab${tab === id ? " tab-on" : ""}" data-tab="${id}">${label}${extra}</button>`;
   root.innerHTML =
     `<div class="card wide">${badge("Lane")}<h1>${editing ? "Edit activity" : "New activity"}</h1>` +
-    `<div class="tabs">${tabBtn("details", "Details")}${tabBtn("tasks", "Tasks", count(tasksFor().length))}${tabBtn("notes", "Notes", count(notesFor().length))}${tabBtn("links", "Links")}</div>` +
+    `<div class="tabs">${tabBtn("details", "Details")}${tabBtn("tasks", "Tasks", count(tasksFor().length))}${tabBtn("notes", "Notes", count(notesFor().length))}${tabBtn("links", "Links", count(linksFor().length))}</div>` +
     `<p class="flash" id="flash" style="display:none"></p>` +
     `<div class="tabbody">${tabBody()}</div></div>`;
   wire();
@@ -269,10 +277,14 @@ function wire(): void {
     if (!url || !activityId) return flash("Enter a URL.", false);
     const res = await apply({ action: "link.create", projectId, objectType: "work_item", objectId: activityId, url, label: label || "" });
     if (!res.ok) return flash(res.message, false);
-    flash("Link added ✓");
-    (document.getElementById("new_link_url") as HTMLInputElement).value = "";
-    (document.getElementById("new_link_label") as HTMLInputElement).value = "";
+    await reload(); render();
   }));
+
+  root.querySelectorAll<HTMLButtonElement>("button[data-link-del]").forEach((b) => b.addEventListener("click", guard(async () => {
+    const res = await apply({ action: "link.delete", projectId, linkId: b.dataset.linkDel, expectedVersion: num(b.dataset.v) });
+    if (!res.ok) return flash(res.message, false);
+    await reload(); render();
+  })));
 }
 
 async function start(): Promise<void> {

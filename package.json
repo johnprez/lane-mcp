@@ -1,6 +1,6 @@
 {
   "name": "lane-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Local MCP server for Lane — runs on your machine, connects to your Lane workspace with your own personal access token.",
@@ -14,7 +14,8 @@
     "build:apps": "node scripts/build-apps.mjs",
     "build": "npm run build:apps && tsup",
     "start": "node dist/index.mjs",
-    "typecheck": "npm run build:apps && tsc --noEmit"
+    "typecheck": "npm run build:apps && tsc --noEmit",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
