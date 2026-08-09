@@ -8,6 +8,19 @@ export function esc(value: string): string {
   return value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 }
 
+// Lane's Convergence Signal mark (inherits currentColor), inlined so it renders
+// in the sandbox with no external asset. Sits to the left of the "Lane" wordmark.
+const LANE_MARK =
+  '<svg class="mark" viewBox="0 0 64 64" width="13" height="13" fill="none" aria-hidden="true">' +
+  '<g stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M8 12C24 12 22 32 30 32"/><path d="M8 32H30"/><path d="M8 52C24 52 22 32 30 32"/>' +
+  '<path d="M44 32H56"/><circle cx="37" cy="32" r="5.75"/></g></svg>';
+
+/** The Lane badge: logo mark + wordmark (with an optional "· Qualifier"). */
+export function badge(text = "Lane"): string {
+  return `<span class="badge">${LANE_MARK}<span>${esc(text)}</span></span>`;
+}
+
 type HostCtx = { theme?: unknown; styles?: { variables?: unknown; css?: { fonts?: unknown } } } | undefined;
 
 function applyCtx(ctx: HostCtx): void {

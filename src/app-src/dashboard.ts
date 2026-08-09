@@ -7,7 +7,7 @@
  * toggle where the host allows it.
  */
 import { App } from "@modelcontextprotocol/ext-apps";
-import { esc, wireTheme, applyInitialTheme } from "./shared.js";
+import { badge, esc, wireTheme, applyInitialTheme } from "./shared.js";
 
 const root = document.getElementById("root")!;
 
@@ -48,7 +48,7 @@ function wireFullscreen(): void {
 }
 
 function errCard(message: string): string {
-  return `<div class="card wide"><span class="badge">Lane · Overview</span><h1>Overview</h1><p>${esc(message)}</p></div>`;
+  return `<div class="card wide">${badge("Lane · Overview")}<h1>Overview</h1><p>${esc(message)}</p></div>`;
 }
 
 function render(ctx: Ctx): void {
@@ -97,7 +97,7 @@ function render(ctx: Ctx): void {
 
   root.innerHTML =
     `<div class="card wide">` +
-    `<div class="head"><span class="badge">Lane · Overview</span>${fsButton()}</div>` +
+    `<div class="head">${badge("Lane · Overview")}${fsButton()}</div>` +
     `<h1>${scope}</h1>` +
     `<div class="tiles">` +
     tile(activities.length, "Activities") +
@@ -115,7 +115,7 @@ function render(ctx: Ctx): void {
 
 const app = new App({ name: "Lane Overview", version: "0.1.0" });
 wireTheme(app);
-root.innerHTML = `<div class="card wide"><span class="badge">Lane · Overview</span><h1>Plan overview</h1><p>Reading your plan…</p></div>`;
+root.innerHTML = `<div class="card wide">${badge("Lane · Overview")}<h1>Plan overview</h1><p>Reading your plan…</p></div>`;
 
 let projectId: string | undefined;
 let loaded = false;

@@ -9,6 +9,7 @@ import type { LaneSession } from "./session.js";
 import { WORKSPACES_APP_HTML } from "./generated/workspaces-app.js";
 import { APPROVAL_APP_HTML } from "./generated/approval-app.js";
 import { DASHBOARD_APP_HTML } from "./generated/dashboard-app.js";
+import { FORM_APP_HTML } from "./generated/form-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -30,6 +31,7 @@ const APP_MIME = "text/html;profile=mcp-app";
 const WORKSPACES_APP_URI = "ui://lane/workspaces";
 const APPROVAL_APP_URI = "ui://lane/approval";
 const DASHBOARD_APP_URI = "ui://lane/dashboard";
+const FORM_APP_URI = "ui://lane/form";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   server.registerResource(
@@ -53,6 +55,14 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     DASHBOARD_APP_URI,
     { title: "Ask Lane plan overview", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: DASHBOARD_APP_HTML }] }),
+  );
+  // Create form: the user fills fields (incl. assignees) and the form applies the
+  // resulting lane_apply_action itself.
+  server.registerResource(
+    "lane-form-app",
+    FORM_APP_URI,
+    { title: "Ask Lane create form", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: FORM_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -138,5 +148,35 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         structuredContent: { applied: true, action: result.action, message: result.message },
       };
     },
+  );
+
+  server.registerTool(
+    "lane_render_form",
+    {
+      title: "Open a Lane create form",
+      description:
+        "Open an interactive form in the chat for the user to create a Lane record themselves (activity, milestone, event, task, note, or link) — including assigning people — instead of you guessing the fields. Use this when the user wants to add/create something and details are missing, or when they'd rather fill it in. Pass the `kind` and the active `projectId`. For a task pass the parent activity id as `parentId`. For a note pass the owning record's id as `parentId` and its type as `parentType` (activity|milestone|event|deliverable). For a link pass the target object id as `parentId` and its type as `parentType` (work_item|milestone|event|task|deliverable). The user edits and submits; the form applies the change itself and reports its own receipt — do NOT also call lane_apply_action for it.",
+      inputSchema: z.object({
+        kind: z.enum(["activity", "milestone", "event", "task", "note", "link"]),
+        projectId: z.string().uuid().optional().describe("The project to create in (required for every kind)."),
+        parentId: z.string().uuid().optional().describe("Owning record: activity id for a task, note target for a note, link target for a link."),
+        parentType: z.string().optional().describe("For note: activity|milestone|event|deliverable. For link: work_item|milestone|event|task|deliverable."),
+        title: z.string().max(300).optional().describe("Optional prefill for the title/name/body field."),
+      }),
+      // This tool only opens a form; the actual (destructive) write happens when the
+      // user submits, via lane_apply_action.
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: FORM_APP_URI } },
+    },
+    async ({ kind, projectId, parentId, parentType, title }) => ({
+      content: [{ type: "text", text: `Opening a ${kind} form for you to fill in and submit.` }],
+      structuredContent: {
+        kind,
+        projectId: projectId ?? null,
+        parentId: parentId ?? null,
+        parentType: parentType ?? null,
+        title: title ?? null,
+      },
+    }),
   );
 }

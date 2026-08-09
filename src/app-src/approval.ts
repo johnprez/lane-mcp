@@ -9,7 +9,7 @@
  * and excluded from the Node typecheck.
  */
 import { App } from "@modelcontextprotocol/ext-apps";
-import { esc, wireTheme, applyInitialTheme } from "./shared.js";
+import { badge, esc, wireTheme, applyInitialTheme } from "./shared.js";
 
 const root = document.getElementById("root")!;
 
@@ -49,7 +49,7 @@ function fieldsHtml(action: LaneAction): string {
 function renderLoading(): void {
   if (settled) return;
   root.innerHTML =
-    '<div class="card"><span class="badge">Lane · Approval</span>' +
+    '<div class="card">' + badge("Lane · Approval") +
     "<h1>Preparing change…</h1><p>Reading the change details from Lane…</p></div>";
 }
 
@@ -57,7 +57,7 @@ function renderPending(describe?: string): void {
   if (settled || !pendingAction) return;
   const type = pendingAction.action ? String(pendingAction.action) : "Lane change";
   root.innerHTML =
-    '<div class="card"><span class="badge">Lane · Approval</span>' +
+    '<div class="card">' + badge("Lane · Approval") +
     "<h1>Apply this change?</h1>" +
     `<p>Lane will run <code class="chip">${esc(type)}</code>.</p>` +
     (describe ? `<p class="note">${esc(describe)}</p>` : "") +
@@ -73,7 +73,7 @@ function renderPending(describe?: string): void {
 function renderStatus(title: string, cls: "ok" | "err" | "", message: string): void {
   settled = true;
   root.innerHTML =
-    '<div class="card"><span class="badge">Lane · Approval</span>' +
+    '<div class="card">' + badge("Lane · Approval") +
     `<h1 class="${cls}">${esc(title)}</h1><p>${esc(message)}</p></div>`;
 }
 
@@ -146,7 +146,7 @@ app
     window.setTimeout(() => {
       if (!pendingAction && !settled) {
         root.innerHTML =
-          '<div class="card"><span class="badge">Lane · Approval</span>' +
+          '<div class="card">' + badge("Lane · Approval") +
           "<h1>Waiting for change details</h1><p>Lane didn't hand this view the change to review. Ask Lane to prepare the change again.</p></div>";
       }
     }, 2500);

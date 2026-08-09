@@ -14,6 +14,7 @@ const apps = [
   { name: "workspaces", entry: "src/app-src/workspaces.ts", exportName: "WORKSPACES_APP_HTML" },
   { name: "approval", entry: "src/app-src/approval.ts", exportName: "APPROVAL_APP_HTML" },
   { name: "dashboard", entry: "src/app-src/dashboard.ts", exportName: "DASHBOARD_APP_HTML" },
+  { name: "form", entry: "src/app-src/form.ts", exportName: "FORM_APP_HTML" },
 ];
 
 // Shared shell + Lane-themed, light/dark-aware styles. Each app owns its markup
@@ -45,7 +46,8 @@ body { margin:0; font-family:-apple-system,"Segoe UI",system-ui,sans-serif; back
 .card.wide { max-width:640px; }
 body.fullscreen .card.wide { max-width:960px; }
 .head { display:flex; align-items:center; justify-content:space-between; }
-.badge { display:inline-flex; gap:6px; padding:4px 10px; border-radius:999px; background:var(--purple-bg); color:var(--purple); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px 4px 8px; border-radius:999px; background:var(--purple-bg); color:var(--purple); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.badge svg.mark { display:block; flex:none; }
 h1 { margin:12px 0 4px; font-size:18px; letter-spacing:-.01em; }
 h2 { margin:18px 0 8px; font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
 p { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
@@ -99,6 +101,18 @@ code.chip { display:inline-block; padding:2px 7px; border-radius:6px; background
 .listrow-sub { font-size:11.5px; color:var(--muted); text-transform:capitalize; }
 .pill { flex:none; padding:3px 9px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
 .pill-active { color:var(--jade); background:color-mix(in srgb, var(--jade) 16%, transparent); }
+
+/* Form (create card) */
+.field { margin-top:10px; }
+.flabel { display:block; margin-bottom:4px; font-size:11.5px; font-weight:650; color:var(--muted); }
+.req { color:var(--red); }
+input[type=text], input[type=date], input[type=datetime-local], textarea, select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--card-bg); color:var(--ink); font:inherit; font-size:13px; }
+input:focus, textarea:focus, select:focus { outline:0; border-color:var(--purple); box-shadow:0 0 0 3px color-mix(in srgb, var(--purple) 22%, transparent); }
+textarea { resize:vertical; }
+.chk { display:flex; align-items:center; gap:7px; font-size:13px; color:var(--ink); font-weight:500; }
+.chk input { width:auto; }
+.people { display:flex; flex-direction:column; gap:6px; max-height:150px; overflow:auto; padding:8px 10px; border:1px solid var(--line); border-radius:9px; }
+.muted-s { font-size:12px; color:var(--muted); margin:0; }
 `;
 
 function pageHtml(scriptJs) {

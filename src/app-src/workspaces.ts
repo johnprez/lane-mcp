@@ -5,14 +5,14 @@
  * switch-active-workspace tool, so this is a read + a nudge, not a mutation.
  */
 import { App } from "@modelcontextprotocol/ext-apps";
-import { esc, wireTheme, applyInitialTheme } from "./shared.js";
+import { badge, esc, wireTheme, applyInitialTheme } from "./shared.js";
 
 const root = document.getElementById("root")!;
 
 type Workspace = { id?: string; name?: string; role?: string; active?: boolean };
 
 function card(title: string, body: string): string {
-  return `<div class="card"><span class="badge">Lane</span><h1>${esc(title)}</h1>${body}</div>`;
+  return `<div class="card">${badge("Lane")}<h1>${esc(title)}</h1>${body}</div>`;
 }
 
 function render(workspaces: Workspace[]): void {
