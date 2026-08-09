@@ -11,6 +11,7 @@ import { APPROVAL_APP_HTML } from "./generated/approval-app.js";
 import { DASHBOARD_APP_HTML } from "./generated/dashboard-app.js";
 import { FORM_APP_HTML } from "./generated/form-app.js";
 import { ACTIVITY_APP_HTML } from "./generated/activity-app.js";
+import { ENTITY_APP_HTML } from "./generated/entity-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -34,6 +35,7 @@ const APPROVAL_APP_URI = "ui://lane/approval";
 const DASHBOARD_APP_URI = "ui://lane/dashboard";
 const FORM_APP_URI = "ui://lane/form";
 const ACTIVITY_APP_URI = "ui://lane/activity";
+const ENTITY_APP_URI = "ui://lane/record";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   server.registerResource(
@@ -72,6 +74,13 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     ACTIVITY_APP_URI,
     { title: "Ask Lane activity editor", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: ACTIVITY_APP_HTML }] }),
+  );
+  // Record editor: milestones, phases, deliverables, time off — create + edit.
+  server.registerResource(
+    "lane-record-app",
+    ENTITY_APP_URI,
+    { title: "Ask Lane record editor", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: ENTITY_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -164,9 +173,9 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     {
       title: "Open a Lane create form",
       description:
-        "Open an interactive form in the chat for the user to create a Lane record themselves (milestone, event, task, note, or link) — including assigning people — instead of you guessing the fields. Use this when the user wants to add/create something and details are missing, or when they'd rather fill it in. For creating or editing an ACTIVITY, use lane_edit_activity instead (it has the full tabbed editor). Pass the `kind` and the active `projectId`. For a task pass the parent activity id as `parentId`. For a note pass the owning record's id as `parentId` and its type as `parentType` (activity|milestone|event|deliverable). For a link pass the target object id as `parentId` and its type as `parentType` (work_item|milestone|event|task|deliverable). The user edits and submits; the form applies the change itself and reports its own receipt — do NOT also call lane_apply_action for it.",
+        "Open an interactive form in the chat for the user to create a Lane record themselves (event, task, note, or link) — instead of you guessing the fields. Use this when the user wants to add/create something and details are missing, or when they'd rather fill it in. For an ACTIVITY use lane_edit_activity; for a MILESTONE, PHASE, DELIVERABLE, or TIME OFF use lane_edit_record. Pass the `kind` and the active `projectId`. For a task pass the parent activity id as `parentId`. For a note pass the owning record's id as `parentId` and its type as `parentType` (activity|milestone|event|deliverable). For a link pass the target object id as `parentId` and its type as `parentType` (work_item|milestone|event|task|deliverable). The user edits and submits; the form applies the change itself and reports its own receipt — do NOT also call lane_apply_action for it.",
       inputSchema: z.object({
-        kind: z.enum(["milestone", "event", "task", "note", "link"]),
+        kind: z.enum(["event", "task", "note", "link"]),
         projectId: z.string().uuid().optional().describe("The project to create in (required for every kind)."),
         parentId: z.string().uuid().optional().describe("Owning record: activity id for a task, note target for a note, link target for a link."),
         parentType: z.string().optional().describe("For note: activity|milestone|event|deliverable. For link: work_item|milestone|event|task|deliverable."),
@@ -205,6 +214,27 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     async ({ projectId, activityId }) => ({
       content: [{ type: "text", text: activityId ? "Opening the activity editor." : "Opening a new activity editor." }],
       structuredContent: { projectId, activityId: activityId ?? null },
+    }),
+  );
+
+  server.registerTool(
+    "lane_edit_record",
+    {
+      title: "Open a Lane record editor",
+      description:
+        "Open an interactive editor for a milestone, phase, deliverable, or time-off entry — create or edit. Milestones and deliverables get a Notes tab. Pass `kind` and the active `projectId`. To EDIT an existing record, also pass its `entityId`; omit it to CREATE. For `pto` (time off) also pass `workspaceId` (it is workspace-scoped). The user edits and applies changes themselves; the editor calls the write tool and reports its own receipts — do NOT also call lane_apply_action for it.",
+      inputSchema: z.object({
+        kind: z.enum(["milestone", "phase", "deliverable", "pto"]),
+        projectId: z.string().uuid().describe("The project in scope (required for every kind, including pto)."),
+        workspaceId: z.string().uuid().optional().describe("Required for kind 'pto' (time off is workspace-scoped)."),
+        entityId: z.string().uuid().optional().describe("Existing record to edit. Omit to create a new one."),
+      }),
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: ENTITY_APP_URI } },
+    },
+    async ({ kind, projectId, workspaceId, entityId }) => ({
+      content: [{ type: "text", text: `Opening the ${kind} editor.` }],
+      structuredContent: { kind, projectId, workspaceId: workspaceId ?? null, entityId: entityId ?? null },
     }),
   );
 }

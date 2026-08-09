@@ -60,6 +60,8 @@ const CONTEXT_ROW_LIMITS = {
   notes: 400,
   dependencies: 1_000,
   links: 500,
+  deliverables: 250,
+  timeOff: 300,
 } as const;
 
 function compactText(value: unknown, maximum: number): unknown {
@@ -138,11 +140,14 @@ export type LaneContext = {
   notes: Record<string, LaneContextRow[]>;
   dependencies: LaneContextRow[];
   links: LaneContextRow[];
+  deliverables: LaneContextRow[];
+  timeOff: LaneContextRow[];
 };
 
 const EMPTY_CONTEXT: LaneContext = {
   projects: [], lanes: [], phases: [], milestones: [], activities: [], tasks: [],
   events: [], people: [], roles: [], groups: [], assignments: {}, notes: {}, dependencies: [], links: [],
+  deliverables: [], timeOff: [],
 };
 
 /**
@@ -192,7 +197,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     version: project.version,
     updated_at: project.updated_at,
   }));
-  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies, links] = await Promise.all([
+  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies, links, deliverables, deliverableNotes, timeOff] = await Promise.all([
     db.from("workstreams").select("id, project_id, name, description, status, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.lanes),
     db.from("project_phases").select("id, project_id, name, description, starts_on, ends_on, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.phases),
     db.from("milestones").select("id, project_id, title, description, status, target_date, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.milestones),
@@ -217,6 +222,9 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     db.from("planning_event_notes").select("id, project_id, event_id, body, version, created_by, updated_by, created_at, updated_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
     db.from("work_item_dependencies").select("project_id, predecessor_id, successor_id, lag_days, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.dependencies),
     db.from("plan_object_links").select("id, project_id, object_type, object_id, url, label, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.links),
+    db.from("deliverables").select("id, project_id, title, description, delivery_date, progress, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.deliverables),
+    db.from("deliverable_notes").select("id, project_id, deliverable_id, body, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
+    db.from("person_time_off").select("id, workspace_id, person_id, starts_on, ends_on, note, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.timeOff),
   ]);
   // A complete plan needs its structural records. The enrichment reads below are
   // valuable but cannot prevent understanding a plan when a newly deployed
@@ -245,6 +253,9 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const eventNoteRows = optionalContext("event-notes", eventNotes, []);
   const dependencyRows = optionalContext("dependencies", dependencies, []);
   const linkRows = optionalContext("links", links, []);
+  const deliverableRows = optionalContext("deliverables", deliverables, []);
+  const deliverableNoteRows = optionalContext("deliverable-notes", deliverableNotes, []);
+  const timeOffRows = optionalContext("time-off", timeOff, []);
   return {
     projects: projectContext as unknown as LaneContextRow[],
     lanes: compactRows((lanes.data ?? []) as LaneContextRow[], CONTEXT_ROW_LIMITS.lanes),
@@ -270,8 +281,11 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
       activities: compactRows(activityNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
       milestones: compactRows(milestoneNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
       events: compactRows(eventNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
+      deliverables: compactRows(deliverableNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
     },
     dependencies: compactRows(dependencyRows ?? [], CONTEXT_ROW_LIMITS.dependencies),
     links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links),
+    deliverables: compactRows(deliverableRows ?? [], CONTEXT_ROW_LIMITS.deliverables),
+    timeOff: compactRows(timeOffRows ?? [], CONTEXT_ROW_LIMITS.timeOff),
   };
 }

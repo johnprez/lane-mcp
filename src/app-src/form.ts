@@ -69,6 +69,7 @@ function fieldsFor(kind: string): Field[] {
         { name: "title", label: "Title", type: "text", required: true, value: input.title },
         { name: "description", label: "Description", type: "textarea" },
         { name: "startsAt", label: "Starts", type: "datetime", required: true },
+        { name: "endsAt", label: "Ends", type: "datetime" },
         { name: "allDay", label: "All day", type: "checkbox" },
         { name: "personIds", label: "Attendees", type: "people", options: peopleOptions() },
       ];
@@ -137,8 +138,10 @@ function buildAction(kind: string, v: Record<string, unknown>): Record<string, u
     case "event": {
       if (!v.startsAt) return { error: "Pick a start time." };
       const startsAt = new Date(String(v.startsAt)).toISOString();
+      const endsAt = v.endsAt ? new Date(String(v.endsAt)).toISOString() : null;
+      if (endsAt && endsAt < startsAt) return { error: "End must be after start." };
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-      return { action: "event.create", projectId, title: v.title, description: v.description || "", startsAt, endsAt: null, allDay: Boolean(v.allDay), timezone, color: "#7357e8", laneIds: [], personIds: v.personIds || [], groupIds: [] };
+      return { action: "event.create", projectId, title: v.title, description: v.description || "", startsAt, endsAt, allDay: Boolean(v.allDay), timezone, color: "#7357e8", laneIds: [], personIds: v.personIds || [], groupIds: [] };
     }
     case "task":
       if (!input.parentId) return { error: "This task needs a parent activity." };

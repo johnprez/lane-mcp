@@ -18,8 +18,9 @@ support cards fall back to plain text.
 | `lane_list_workspaces` | Your workspaces, role, and which is active. |
 | `lane_get_context` | Your plan graph — projects, milestones, activities, people, links, etc. Readable summary **and** structured data. |
 | `lane_apply_action` | Create / update / delete one Lane object. Supports `preview` to see a change before applying it. |
-| `lane_render_form` | Open an inline form to create a milestone, event, task, note, or link. |
-| `lane_edit_activity` | Open the full activity editor (Details / Tasks / Notes / Links), create or edit. |
+| `lane_render_form` | Open an inline form to create an event, task, note, or link. |
+| `lane_edit_activity` | Full activity editor (Details / Tasks / Notes / Links), create or edit. |
+| `lane_edit_record` | Editor for a milestone, phase, deliverable, or time-off entry, create or edit. |
 
 ## Prerequisites
 
