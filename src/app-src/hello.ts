@@ -10,6 +10,12 @@
  */
 import { App } from "@modelcontextprotocol/ext-apps";
 
+const root = document.getElementById("root")!;
+root.innerHTML =
+  '<div class="card"><span class="badge">Lane</span>' +
+  '<h1>Interactive UI is <span class="ok">live</span></h1>' +
+  '<p id="data">Connecting to Lane…</p></div>';
+
 const dataEl = document.getElementById("data");
 function show(text: string) {
   if (dataEl) dataEl.textContent = text;

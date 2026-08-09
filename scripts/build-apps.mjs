@@ -9,14 +9,39 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-/** @type {{ name: string, entry: string, exportName: string, title: string }[]} */
+/** @type {{ name: string, entry: string, exportName: string }[]} */
 const apps = [
-  { name: "hello", entry: "src/app-src/hello.ts", exportName: "HELLO_APP_HTML", title: "Lane" },
+  { name: "hello", entry: "src/app-src/hello.ts", exportName: "HELLO_APP_HTML" },
+  { name: "approval", entry: "src/app-src/approval.ts", exportName: "APPROVAL_APP_HTML" },
 ];
 
-/** Wrap the bundled IIFE + card markup into one standalone HTML document. */
-function pageHtml(title, scriptJs) {
-  // Guard against the bundle containing a literal </script> that would close the tag early.
+// Shared shell + Lane-themed styles. Each app owns its markup by rendering into
+// #root, so this stays generic across cards.
+const SHARED_CSS = `
+:root { color-scheme: light dark; --purple:#5b43c9; --jade:#2f9e6a; --red:#d1453f; --ink:#201f2b; --muted:#6b6678; --line:#e6e2f0; }
+* { box-sizing: border-box; }
+body { margin:0; font-family:-apple-system,"Segoe UI",system-ui,sans-serif; background:transparent; color:var(--ink); }
+.card { max-width:520px; margin:14px auto; padding:18px 20px; border:1px solid var(--line); border-radius:16px; background:#fff; box-shadow:0 10px 30px rgb(39 28 60 / .08); }
+.badge { display:inline-flex; gap:6px; padding:4px 10px; border-radius:999px; background:#efeaff; color:var(--purple); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+h1 { margin:12px 0 4px; font-size:17px; letter-spacing:-.01em; }
+p { margin:0; color:var(--muted); font-size:13px; line-height:1.5; }
+.ok { color:var(--jade); } .err { color:var(--red); }
+code.chip { display:inline-block; padding:2px 7px; border-radius:6px; background:#f3f0fb; color:var(--purple); font-size:12px; font-weight:650; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.fields { margin:12px 0 2px; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+.row { display:flex; gap:10px; padding:7px 12px; font-size:12.5px; }
+.row + .row { border-top:1px solid var(--line); }
+.row .k { flex:0 0 34%; color:var(--muted); font-weight:600; }
+.row .v { flex:1; color:var(--ink); word-break:break-word; }
+.actions { display:flex; gap:8px; margin-top:14px; }
+.btn { appearance:none; border:1px solid var(--line); border-radius:10px; padding:9px 14px; font-size:13px; font-weight:650; cursor:pointer; background:#fff; color:var(--ink); }
+.btn:disabled { opacity:.5; cursor:default; }
+.btn-primary { border-color:transparent; color:#fff; background:linear-gradient(135deg,#7357e8,#4c43e8); }
+.btn-ghost { color:var(--muted); }
+.note { margin-top:10px; font-size:12px; }
+`;
+
+function pageHtml(scriptJs) {
+  // Guard against the bundle containing a literal </script> that closes the tag early.
   const safeJs = scriptJs.replace(/<\/script>/gi, "<\\/script>");
   return `<!doctype html>
 <html lang="en">
@@ -24,24 +49,9 @@ function pageHtml(title, scriptJs) {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light dark" />
-<style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; font-family: -apple-system, "Segoe UI", system-ui, sans-serif; background: transparent; color: #201f2b; }
-  .card { max-width: 460px; margin: 16px auto; padding: 20px 22px; border: 1px solid #e0dbf0; border-radius: 16px; background: #fff; box-shadow: 0 10px 30px rgb(39 28 60 / .08); }
-  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #efeaff; color: #5b43c9; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-  h1 { margin: 12px 0 6px; font-size: 18px; letter-spacing: -.01em; }
-  p { margin: 0; color: #6b6678; font-size: 13px; line-height: 1.5; }
-  .ok { color: #2f9e6a; font-weight: 700; }
-</style>
+<style>${SHARED_CSS}</style>
 </head>
-<body>
-  <div class="card">
-    <span class="badge">${title}</span>
-    <h1>Interactive UI is <span class="ok">live</span></h1>
-    <p id="data">Connecting to Lane…</p>
-  </div>
-<script>${safeJs}</script>
-</body>
+<body><div id="root"></div><script>${safeJs}</script></body>
 </html>`;
 }
 
@@ -56,7 +66,7 @@ for (const app of apps) {
     write: false,
   });
   const js = result.outputFiles[0].text;
-  const html = pageHtml(app.title, js);
+  const html = pageHtml(js);
   const outPath = path.join(root, "src/generated", `${app.name}-app.ts`);
   await mkdir(path.dirname(outPath), { recursive: true });
   await writeFile(

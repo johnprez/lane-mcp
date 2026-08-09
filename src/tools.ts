@@ -7,6 +7,7 @@ import { describeAction, summarizeContextMarkdown, workspacesMarkdown } from "./
 import { LaneAgentActionSchema } from "./lane/action-contracts.js";
 import type { LaneSession } from "./session.js";
 import { HELLO_APP_HTML } from "./generated/hello-app.js";
+import { APPROVAL_APP_HTML } from "./generated/approval-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -26,6 +27,7 @@ function jsonResource(uri: string, name: string, value: unknown) {
 // HTML string (regenerated on every build).
 const HELLO_APP_MIME = "text/html;profile=mcp-app";
 const HELLO_APP_URI = "ui://lane/hello";
+const APPROVAL_APP_URI = "ui://lane/approval";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   // Register the interactive UI resource and link it from the workspaces tool via
@@ -37,6 +39,16 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     { title: "Ask Lane interactive UI", mimeType: HELLO_APP_MIME },
     async (uri) => ({
       contents: [{ uri: uri.href, mimeType: HELLO_APP_MIME, text: HELLO_APP_HTML }],
+    }),
+  );
+  // Approval card for lane_apply_action: shows the pending change with
+  // Apply / Cancel; Apply re-invokes the tool with preview:false from the iframe.
+  server.registerResource(
+    "lane-approval-app",
+    APPROVAL_APP_URI,
+    { title: "Ask Lane approval card", mimeType: HELLO_APP_MIME },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: HELLO_APP_MIME, text: APPROVAL_APP_HTML }],
     }),
   );
 
@@ -102,15 +114,18 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         preview: z.boolean().optional(),
         action: z.string(),
         message: z.string(),
+        describe: z.string().optional(),
       }),
       annotations: { destructiveHint: true },
+      _meta: { ui: { resourceUri: APPROVAL_APP_URI } },
     },
     async ({ action, preview }) => {
       if (preview) {
-        const message = `Preview only — nothing applied. This would run:\n\n${describeAction(action as Record<string, unknown>)}\n\nRe-call with \`preview: false\` to apply.`;
+        const describe = describeAction(action as Record<string, unknown>);
+        const message = `Preview only — nothing applied. This would run:\n\n${describe}\n\nRe-call with \`preview: false\` to apply.`;
         return {
           content: [{ type: "text", text: message }],
-          structuredContent: { applied: false, preview: true, action: action.action, message: "Preview only; nothing was applied." },
+          structuredContent: { applied: false, preview: true, action: action.action, message: "Preview only; nothing was applied.", describe },
         };
       }
       const result = await session.apply(action);
