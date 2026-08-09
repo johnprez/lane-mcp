@@ -9,6 +9,7 @@
  * and excluded from the Node typecheck.
  */
 import { App } from "@modelcontextprotocol/ext-apps";
+import { esc, wireTheme, applyInitialTheme } from "./shared.js";
 
 const root = document.getElementById("root")!;
 
@@ -16,14 +17,31 @@ type LaneAction = { action?: string } & Record<string, unknown>;
 let pendingAction: LaneAction | null = null;
 let settled = false;
 
-function esc(value: string): string {
-  return value.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+// Plumbing the reader doesn't need to eyeball on an approval card.
+const HIDDEN_FIELDS = new Set([
+  "action", "projectId", "entityId", "parentId", "workspaceId", "expectedVersion", "id", "version", "personId",
+]);
+
+function humanKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function fmtValue(value: unknown): string {
+  const s = String(value);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+  return s;
 }
 
 function fieldsHtml(action: LaneAction): string {
   const rows = Object.entries(action)
-    .filter(([key, value]) => key !== "action" && value != null && typeof value !== "object")
-    .map(([key, value]) => `<div class="row"><span class="k">${esc(key)}</span><span class="v">${esc(String(value))}</span></div>`)
+    .filter(([key, value]) => !HIDDEN_FIELDS.has(key) && value != null && typeof value !== "object")
+    .map(([key, value]) => `<div class="row"><span class="k">${esc(humanKey(key))}</span><span class="v">${esc(fmtValue(value))}</span></div>`)
     .join("");
   return rows ? `<div class="fields">${rows}</div>` : "";
 }
@@ -87,6 +105,7 @@ function onCancel(): void {
 }
 
 const app = new App({ name: "Lane Approval", version: "0.1.0" });
+wireTheme(app);
 
 // Primary source: the tool arguments the host streams in at render time.
 app.ontoolinput = (params: { arguments?: Record<string, unknown> }) => {
@@ -120,6 +139,7 @@ renderLoading();
 app
   .connect()
   .then(() => {
+    applyInitialTheme(app);
     if (!pendingAction && !settled) renderLoading();
     // Fallback so the card never sits silently if the host delivered neither
     // tool input nor result to this freshly-loaded app.

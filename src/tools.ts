@@ -6,8 +6,9 @@ import { listLaneWorkspaces } from "./lane/workspaces.js";
 import { describeAction, summarizeContextMarkdown, workspacesMarkdown } from "./lane/format.js";
 import { LaneAgentActionSchema } from "./lane/action-contracts.js";
 import type { LaneSession } from "./session.js";
-import { HELLO_APP_HTML } from "./generated/hello-app.js";
+import { WORKSPACES_APP_HTML } from "./generated/workspaces-app.js";
 import { APPROVAL_APP_HTML } from "./generated/approval-app.js";
+import { DASHBOARD_APP_HTML } from "./generated/dashboard-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -21,35 +22,37 @@ function jsonResource(uri: string, name: string, value: unknown) {
   };
 }
 
-// Ask Lane interactive UI (MCP Apps). `ui://lane/hello` is the esbuild-bundled
-// iframe app (src/app-src/hello.ts + scripts/build-apps.mjs); a tool opts in by
-// pointing `_meta.ui.resourceUri` at it. HELLO_APP_HTML is the generated inlined
-// HTML string (regenerated on every build).
-const HELLO_APP_MIME = "text/html;profile=mcp-app";
-const HELLO_APP_URI = "ui://lane/hello";
+// Ask Lane interactive UI (MCP Apps). Each `ui://lane/*` resource is an
+// esbuild-bundled iframe app (src/app-src/* + scripts/build-apps.mjs); a tool
+// opts in by pointing `_meta.ui.resourceUri` at one. Hosts that support MCP Apps
+// render the iframe; others ignore it and fall back to text + structuredContent.
+const APP_MIME = "text/html;profile=mcp-app";
+const WORKSPACES_APP_URI = "ui://lane/workspaces";
 const APPROVAL_APP_URI = "ui://lane/approval";
+const DASHBOARD_APP_URI = "ui://lane/dashboard";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
-  // Register the interactive UI resource and link it from the workspaces tool via
-  // _meta.ui.resourceUri. Hosts that support MCP Apps render the iframe; others
-  // ignore it and fall back to the tool's normal text + structuredContent.
   server.registerResource(
-    "lane-hello-app",
-    HELLO_APP_URI,
-    { title: "Ask Lane interactive UI", mimeType: HELLO_APP_MIME },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: HELLO_APP_MIME, text: HELLO_APP_HTML }],
-    }),
+    "lane-workspaces-app",
+    WORKSPACES_APP_URI,
+    { title: "Ask Lane workspaces", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: WORKSPACES_APP_HTML }] }),
   );
   // Approval card for lane_apply_action: shows the pending change with
   // Apply / Cancel; Apply re-invokes the tool with preview:false from the iframe.
   server.registerResource(
     "lane-approval-app",
     APPROVAL_APP_URI,
-    { title: "Ask Lane approval card", mimeType: HELLO_APP_MIME },
-    async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: HELLO_APP_MIME, text: APPROVAL_APP_HTML }],
-    }),
+    { title: "Ask Lane approval card", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: APPROVAL_APP_HTML }] }),
+  );
+  // Plan overview dashboard for lane_get_context: needs-attention tiles + upcoming
+  // milestone timeline (read-only).
+  server.registerResource(
+    "lane-dashboard-app",
+    DASHBOARD_APP_URI,
+    { title: "Ask Lane plan overview", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: DASHBOARD_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -63,7 +66,7 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         workspaces: z.array(z.object({ id: z.string(), name: z.string(), role: z.string(), active: z.boolean() })),
       }),
       annotations: { readOnlyHint: true },
-      _meta: { ui: { resourceUri: HELLO_APP_URI } },
+      _meta: { ui: { resourceUri: WORKSPACES_APP_URI } },
     },
     async () => {
       const token = await session.accessToken();
@@ -85,6 +88,7 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         projectId: z.string().uuid().optional().describe("Focus the read on one project. Omit to read the whole active workspace."),
       }),
       annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: DASHBOARD_APP_URI } },
     },
     async ({ projectId }) => {
       const token = await session.accessToken();
