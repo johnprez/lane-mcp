@@ -6,6 +6,7 @@ import { listLaneWorkspaces } from "./lane/workspaces.js";
 import { describeAction, summarizeContextMarkdown, workspacesMarkdown } from "./lane/format.js";
 import { LaneAgentActionSchema } from "./lane/action-contracts.js";
 import type { LaneSession } from "./session.js";
+import { HELLO_APP_HTML } from "./generated/hello-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -19,7 +20,26 @@ function jsonResource(uri: string, name: string, value: unknown) {
   };
 }
 
+// Ask Lane interactive UI (MCP Apps). `ui://lane/hello` is the esbuild-bundled
+// iframe app (src/app-src/hello.ts + scripts/build-apps.mjs); a tool opts in by
+// pointing `_meta.ui.resourceUri` at it. HELLO_APP_HTML is the generated inlined
+// HTML string (regenerated on every build).
+const HELLO_APP_MIME = "text/html;profile=mcp-app";
+const HELLO_APP_URI = "ui://lane/hello";
+
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
+  // Register the interactive UI resource and link it from the workspaces tool via
+  // _meta.ui.resourceUri. Hosts that support MCP Apps render the iframe; others
+  // ignore it and fall back to the tool's normal text + structuredContent.
+  server.registerResource(
+    "lane-hello-app",
+    HELLO_APP_URI,
+    { title: "Ask Lane interactive UI", mimeType: HELLO_APP_MIME },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: HELLO_APP_MIME, text: HELLO_APP_HTML }],
+    }),
+  );
+
   server.registerTool(
     "lane_list_workspaces",
     {
@@ -31,6 +51,7 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         workspaces: z.array(z.object({ id: z.string(), name: z.string(), role: z.string(), active: z.boolean() })),
       }),
       annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: HELLO_APP_URI } },
     },
     async () => {
       const token = await session.accessToken();

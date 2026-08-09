@@ -34,6 +34,16 @@ function main() {
 
   serveStdio(() => {
     const server = new McpServer({ name: "lane", version: "1.0.0" }, { capabilities: { tools: {} } });
+    // MCP Apps diagnostic: log what the host advertises on initialize. If it does
+    // not include an `io.modelcontextprotocol/ui` extension, this transport isn't
+    // offered interactive-UI (MCP Apps) support and a `ui://` resource won't render.
+    server.server.oninitialized = () => {
+      try {
+        console.error(`[lane-mcp] client capabilities: ${JSON.stringify(server.server.getClientCapabilities())}`);
+      } catch {
+        /* diagnostic only */
+      }
+    };
     registerLaneTools(server, session);
     return server;
   });

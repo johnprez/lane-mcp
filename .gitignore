@@ -1,3 +1,6 @@
 node_modules/
 dist/
 .env
+
+# Generated MCP Apps HTML bundles (rebuilt by scripts/build-apps.mjs)
+src/generated/

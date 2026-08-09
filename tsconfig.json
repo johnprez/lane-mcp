@@ -12,5 +12,7 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "tsup.config.ts"]
+  "include": ["src", "tsup.config.ts"],
+  "comment-exclude": "src/app-src targets the browser (DOM globals) and is bundled by scripts/build-apps.mjs, not typechecked by the Node tsconfig.",
+  "exclude": ["src/app-src"]
 }
