@@ -15,6 +15,7 @@ const apps = [
   { name: "approval", entry: "src/app-src/approval.ts", exportName: "APPROVAL_APP_HTML" },
   { name: "dashboard", entry: "src/app-src/dashboard.ts", exportName: "DASHBOARD_APP_HTML" },
   { name: "form", entry: "src/app-src/form.ts", exportName: "FORM_APP_HTML" },
+  { name: "activity", entry: "src/app-src/activity.ts", exportName: "ACTIVITY_APP_HTML" },
 ];
 
 // Shared shell + Lane-themed, light/dark-aware styles. Each app owns its markup
@@ -112,7 +113,30 @@ textarea { resize:vertical; }
 .chk { display:flex; align-items:center; gap:7px; font-size:13px; color:var(--ink); font-weight:500; }
 .chk input { width:auto; }
 .people { display:flex; flex-direction:column; gap:6px; max-height:150px; overflow:auto; padding:8px 10px; border:1px solid var(--line); border-radius:9px; }
-.muted-s { font-size:12px; color:var(--muted); margin:0; }
+.muted-s { font-size:12px; color:var(--muted); margin:6px 0 0; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+@media (max-width:440px){ .grid2 { grid-template-columns:1fr; } }
+
+/* Activity editor: tabs, swatches, inline lists */
+.tabs { display:flex; gap:2px; margin-top:14px; border-bottom:1px solid var(--line); }
+.tab { appearance:none; border:0; background:transparent; padding:8px 12px; margin-bottom:-1px; font:inherit; font-size:12.5px; font-weight:650; color:var(--muted); border-bottom:2px solid transparent; cursor:pointer; }
+.tab-on { color:var(--purple); border-bottom-color:var(--purple); }
+.tabnum { display:inline-flex; min-width:16px; justify-content:center; padding:0 5px; border-radius:999px; background:var(--subtle); color:var(--muted); font-size:10.5px; }
+.tabbody { margin-top:12px; }
+.flash { margin:10px 0 0; font-size:12.5px; font-weight:600; }
+.flash.ok { color:var(--jade); } .flash.err { color:var(--red); }
+.swatches { display:flex; flex-wrap:wrap; gap:8px; }
+.swatch { position:relative; cursor:pointer; }
+.swatch input { position:absolute; opacity:0; inset:0; }
+.swatch > span { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; border:2px solid transparent; box-shadow:inset 0 0 0 1px var(--line); font-size:9px; font-weight:700; color:var(--muted); }
+.swatch input:checked + span { border-color:var(--ink); }
+.swatch-none > span { background:var(--subtle); }
+.done { text-decoration:line-through; color:var(--muted); }
+.note-body { font-size:12.5px; color:var(--ink); white-space:pre-wrap; word-break:break-word; }
+.link-btn { appearance:none; border:0; background:transparent; color:var(--muted); font:inherit; font-size:11.5px; font-weight:600; cursor:pointer; padding:2px 4px; }
+.link-btn:hover { color:var(--red); }
+.addrow { display:flex; gap:8px; align-items:flex-start; margin-top:10px; }
+.addrow input, .addrow textarea { flex:1; }
 `;
 
 function pageHtml(scriptJs) {
