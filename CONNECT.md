@@ -59,8 +59,11 @@ In **Claude Desktop**, Lane replies with live, clickable cards (not just text):
 - **Activity editor** — "Edit the kickoff activity" / "Add an activity" → a tabbed
   editor (Details, Tasks, Notes, Links) with owners, color, and start/due dates.
 - **Record editors** — "Edit the beta milestone", "Add a deliverable", "Set up a
-  phase", "Log time off for Zach" → editors for milestones, phases, deliverables,
-  and time off (milestones & deliverables include a Notes tab).
+  phase", "Log time off for Zach", "Add a team member", "Create a role/group" →
+  editors for milestones, phases, deliverables, time off, people, roles, and
+  groups (milestones & deliverables include a Notes tab).
+- **Dependencies** — "Manage dependencies for this project" → add or remove
+  predecessor → successor links with optional lag.
 - **Approval card** — before a change, Lane shows the exact diff with **Apply** /
   **Cancel** buttons.
 - **Quick forms** — create events (with start & end times), tasks, notes, and links inline.

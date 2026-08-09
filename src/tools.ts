@@ -12,6 +12,7 @@ import { DASHBOARD_APP_HTML } from "./generated/dashboard-app.js";
 import { FORM_APP_HTML } from "./generated/form-app.js";
 import { ACTIVITY_APP_HTML } from "./generated/activity-app.js";
 import { ENTITY_APP_HTML } from "./generated/entity-app.js";
+import { DEPS_APP_HTML } from "./generated/deps-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -36,6 +37,7 @@ const DASHBOARD_APP_URI = "ui://lane/dashboard";
 const FORM_APP_URI = "ui://lane/form";
 const ACTIVITY_APP_URI = "ui://lane/activity";
 const ENTITY_APP_URI = "ui://lane/record";
+const DEPS_APP_URI = "ui://lane/dependencies";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   server.registerResource(
@@ -75,12 +77,19 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     { title: "Ask Lane activity editor", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: ACTIVITY_APP_HTML }] }),
   );
-  // Record editor: milestones, phases, deliverables, time off — create + edit.
+  // Record editor: milestones, phases, deliverables, time off, people, roles, groups.
   server.registerResource(
     "lane-record-app",
     ENTITY_APP_URI,
     { title: "Ask Lane record editor", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: ENTITY_APP_HTML }] }),
+  );
+  // Dependencies card: list / add / remove activity dependencies.
+  server.registerResource(
+    "lane-deps-app",
+    DEPS_APP_URI,
+    { title: "Ask Lane dependencies", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: DEPS_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -222,11 +231,11 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     {
       title: "Open a Lane record editor",
       description:
-        "Open an interactive editor for a milestone, phase, deliverable, or time-off entry — create or edit. Milestones and deliverables get a Notes tab. Pass `kind` and the active `projectId`. To EDIT an existing record, also pass its `entityId`; omit it to CREATE. For `pto` (time off) also pass `workspaceId` (it is workspace-scoped). The user edits and applies changes themselves; the editor calls the write tool and reports its own receipts — do NOT also call lane_apply_action for it.",
+        "Open an interactive editor for a milestone, phase, deliverable, time-off entry, team member (person), role, or group — create or edit. Milestones and deliverables get a Notes tab; a person carries roles + primary role; a group carries members. Pass `kind` and the active `projectId`. To EDIT an existing record, also pass its `entityId`; omit it to CREATE. For the workspace-scoped kinds — `pto`, `person`, `role`, `group` — also pass `workspaceId`. The user edits and applies changes themselves; the editor calls the write tool and reports its own receipts — do NOT also call lane_apply_action for it.",
       inputSchema: z.object({
-        kind: z.enum(["milestone", "phase", "deliverable", "pto"]),
-        projectId: z.string().uuid().describe("The project in scope (required for every kind, including pto)."),
-        workspaceId: z.string().uuid().optional().describe("Required for kind 'pto' (time off is workspace-scoped)."),
+        kind: z.enum(["milestone", "phase", "deliverable", "pto", "person", "role", "group"]),
+        projectId: z.string().uuid().describe("The project in scope (required for every kind)."),
+        workspaceId: z.string().uuid().optional().describe("Required for the workspace-scoped kinds: pto, person, role, group."),
         entityId: z.string().uuid().optional().describe("Existing record to edit. Omit to create a new one."),
       }),
       annotations: { readOnlyHint: true },
@@ -235,6 +244,22 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     async ({ kind, projectId, workspaceId, entityId }) => ({
       content: [{ type: "text", text: `Opening the ${kind} editor.` }],
       structuredContent: { kind, projectId, workspaceId: workspaceId ?? null, entityId: entityId ?? null },
+    }),
+  );
+
+  server.registerTool(
+    "lane_edit_dependencies",
+    {
+      title: "Open the Lane dependencies editor",
+      description:
+        "Open an interactive card to view, add, and remove activity dependencies (predecessor → successor, with an optional lag in days) for a project. Pass the active `projectId`. The user makes changes themselves; the card calls the write tool and reports its own receipts — do NOT also call lane_apply_action for it.",
+      inputSchema: z.object({ projectId: z.string().uuid().describe("The project whose dependencies to manage.") }),
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: DEPS_APP_URI } },
+    },
+    async ({ projectId }) => ({
+      content: [{ type: "text", text: "Opening the dependencies editor." }],
+      structuredContent: { projectId },
     }),
   );
 }

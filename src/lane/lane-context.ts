@@ -90,7 +90,7 @@ function rowContextRead(result: { data: unknown[] | null; error: { code?: string
 
 async function readWorkspacePeople(db: LaneContextClient, workspaceIds: string[]): Promise<ContextRead<LaneContextRow[]>> {
   const rich = await db.from("workspace_people")
-    .select("id, workspace_id, full_name, email, person_kind, role_title, organization_name, default_allocation_percent, level, version")
+    .select("id, workspace_id, full_name, email, person_kind, role_title, organization_name, default_allocation_percent, level, notes, availability_note, version")
     .in("workspace_id", workspaceIds)
     .is("archived_at", null);
   if (!rich.error) return rowContextRead(rich);
@@ -197,7 +197,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     version: project.version,
     updated_at: project.updated_at,
   }));
-  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies, links, deliverables, deliverableNotes, timeOff] = await Promise.all([
+  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies, links, deliverables, deliverableNotes, timeOff, personRoles, groupMembers] = await Promise.all([
     db.from("workstreams").select("id, project_id, name, description, status, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.lanes),
     db.from("project_phases").select("id, project_id, name, description, starts_on, ends_on, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.phases),
     db.from("milestones").select("id, project_id, title, description, status, target_date, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.milestones),
@@ -225,6 +225,8 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     db.from("deliverables").select("id, project_id, title, description, delivery_date, progress, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.deliverables),
     db.from("deliverable_notes").select("id, project_id, deliverable_id, body, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
     db.from("person_time_off").select("id, workspace_id, person_id, starts_on, ends_on, note, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.timeOff),
+    db.from("workspace_person_roles").select("person_id, role_id, is_primary").in("workspace_id", workspaceIds).limit(CONTEXT_ROW_LIMITS.assignments),
+    db.from("workspace_team_group_members").select("group_id, person_id").in("workspace_id", workspaceIds).limit(CONTEXT_ROW_LIMITS.assignments),
   ]);
   // A complete plan needs its structural records. The enrichment reads below are
   // valuable but cannot prevent understanding a plan when a newly deployed
@@ -256,6 +258,8 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const deliverableRows = optionalContext("deliverables", deliverables, []);
   const deliverableNoteRows = optionalContext("deliverable-notes", deliverableNotes, []);
   const timeOffRows = optionalContext("time-off", timeOff, []);
+  const personRoleRows = optionalContext("person-roles", personRoles, []);
+  const groupMemberRows = optionalContext("group-members", groupMembers, []);
   return {
     projects: projectContext as unknown as LaneContextRow[],
     lanes: compactRows((lanes.data ?? []) as LaneContextRow[], CONTEXT_ROW_LIMITS.lanes),
@@ -276,6 +280,8 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
       events: compactRows(eventPeopleRows ?? [], CONTEXT_ROW_LIMITS.assignments),
       eventGroups: compactRows(eventGroupRows ?? [], CONTEXT_ROW_LIMITS.assignments),
       phaseLanes: compactRows(phaseLaneRows ?? [], CONTEXT_ROW_LIMITS.assignments),
+      personRoles: compactRows(personRoleRows ?? [], CONTEXT_ROW_LIMITS.assignments),
+      groupMembers: compactRows(groupMemberRows ?? [], CONTEXT_ROW_LIMITS.assignments),
     },
     notes: {
       activities: compactRows(activityNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),

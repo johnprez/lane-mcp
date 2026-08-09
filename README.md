@@ -20,7 +20,8 @@ support cards fall back to plain text.
 | `lane_apply_action` | Create / update / delete one Lane object. Supports `preview` to see a change before applying it. |
 | `lane_render_form` | Open an inline form to create an event, task, note, or link. |
 | `lane_edit_activity` | Full activity editor (Details / Tasks / Notes / Links), create or edit. |
-| `lane_edit_record` | Editor for a milestone, phase, deliverable, or time-off entry, create or edit. |
+| `lane_edit_record` | Editor for a milestone, phase, deliverable, time-off entry, team member, role, or group. |
+| `lane_edit_dependencies` | View / add / remove activity dependencies for a project. |
 
 ## Prerequisites
 

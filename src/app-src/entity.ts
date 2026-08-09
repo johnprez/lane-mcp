@@ -15,15 +15,15 @@ wireTheme(app);
 
 type Row = Record<string, unknown>;
 type Ctx = {
-  milestones?: Row[]; phases?: Row[]; deliverables?: Row[]; timeOff?: Row[]; lanes?: Row[]; people?: Row[];
-  assignments?: { phaseLanes?: Row[] };
+  milestones?: Row[]; phases?: Row[]; deliverables?: Row[]; timeOff?: Row[]; lanes?: Row[]; people?: Row[]; roles?: Row[]; groups?: Row[];
+  assignments?: { phaseLanes?: Row[]; personRoles?: Row[]; groupMembers?: Row[] };
   notes?: { milestones?: Row[]; deliverables?: Row[] };
 };
-type Kind = "milestone" | "phase" | "deliverable" | "pto";
+type Kind = "milestone" | "phase" | "deliverable" | "pto" | "person" | "role" | "group";
 type Field =
   | { name: string; label: string; type: "text" | "textarea" | "date" | "number"; required?: boolean; value?: string }
   | { name: string; label: string; type: "select"; options: Opt[]; required?: boolean; value?: string }
-  | { name: string; label: string; type: "lanes"; selected: string[] }
+  | { name: string; label: string; type: "multi"; options: Opt[]; selected: string[] }
   | { name: string; label: string; type: "color"; value: string };
 type Opt = { value: string; label: string };
 
@@ -43,17 +43,34 @@ let connected = false;
 let started = false;
 let busy = false;
 
-const NOUN: Record<Kind, string> = { milestone: "milestone", phase: "phase", deliverable: "deliverable", pto: "time off" };
+const NOUN: Record<Kind, string> = { milestone: "milestone", phase: "phase", deliverable: "deliverable", pto: "time off", person: "team member", role: "role", group: "group" };
+const WORKSPACE_KINDS = new Set<Kind>(["pto", "person", "role", "group"]);
 
 function peopleOpts(): Opt[] {
   return (ctx.people ?? []).map((p) => ({ value: str(p.id), label: str(p.full_name) || str(p.name) || "Unnamed" })).filter((o) => o.value);
 }
+function roleOpts(): Opt[] {
+  return (ctx.roles ?? []).map((r) => ({ value: str(r.id), label: str(r.name) || "Role" })).filter((o) => o.value);
+}
+function laneOpts(): Opt[] {
+  return (ctx.lanes ?? []).map((l) => ({ value: str(l.id), label: str(l.name) || "Lane" })).filter((o) => o.value);
+}
 function current(): Row | undefined {
-  const list = kind === "milestone" ? ctx.milestones : kind === "phase" ? ctx.phases : kind === "deliverable" ? ctx.deliverables : ctx.timeOff;
+  const list = kind === "milestone" ? ctx.milestones : kind === "phase" ? ctx.phases : kind === "deliverable" ? ctx.deliverables
+    : kind === "pto" ? ctx.timeOff : kind === "person" ? ctx.people : kind === "role" ? ctx.roles : ctx.groups;
   return (list ?? []).find((r) => str(r.id) === entityId);
 }
 function phaseLaneIds(): string[] {
   return (ctx.assignments?.phaseLanes ?? []).filter((r) => str(r.phase_id) === entityId).map((r) => str(r.workstream_id));
+}
+function personRoleIds(): string[] {
+  return (ctx.assignments?.personRoles ?? []).filter((r) => str(r.person_id) === entityId).map((r) => str(r.role_id));
+}
+function personPrimaryRole(): string {
+  return str((ctx.assignments?.personRoles ?? []).find((r) => str(r.person_id) === entityId && Boolean(r.is_primary))?.role_id);
+}
+function groupMemberIds(): string[] {
+  return (ctx.assignments?.groupMembers ?? []).filter((r) => str(r.group_id) === entityId).map((r) => str(r.person_id));
 }
 function notesList(): Row[] {
   const list = kind === "milestone" ? ctx.notes?.milestones : kind === "deliverable" ? ctx.notes?.deliverables : undefined;
@@ -80,7 +97,7 @@ function fields(): Field[] {
         { name: "startDate", label: "Start", type: "date", required: true, value: dateVal(a.starts_on) },
         { name: "dueDate", label: "End", type: "date", required: true, value: dateVal(a.ends_on) },
         color("#7357e8"),
-        { name: "laneIds", label: "Lanes", type: "lanes", selected: phaseLaneIds() },
+        { name: "laneIds", label: "Lanes", type: "multi", options: laneOpts(), selected: phaseLaneIds() },
       ];
     case "deliverable":
       return [
@@ -97,6 +114,33 @@ function fields(): Field[] {
         { name: "endDate", label: "End", type: "date", required: true, value: dateVal(a.ends_on) },
         { name: "note", label: "Note", type: "textarea", value: str(a.note) },
       ];
+    case "person":
+      return [
+        { name: "fullName", label: "Full name", type: "text", required: true, value: str(a.full_name) },
+        { name: "personKind", label: "Kind", type: "select", options: opt(["team_member", "client"]), value: str(a.person_kind) || "team_member" },
+        { name: "email", label: "Email", type: "text", value: str(a.email) },
+        { name: "roleTitle", label: "Role title", type: "text", value: str(a.role_title) },
+        { name: "organizationName", label: "Organization", type: "text", value: str(a.organization_name) },
+        { name: "level", label: "Level", type: "select", options: [{ value: "", label: "—" }, ...opt(Array.from({ length: 12 }, (_, i) => `L${i + 1}`))], value: str(a.level) },
+        { name: "allocation", label: "Allocation %", type: "number", value: entityId ? String(num(a.default_allocation_percent)) : "100" },
+        { name: "availabilityNote", label: "Availability note", type: "textarea", value: str(a.availability_note) },
+        { name: "notes", label: "Notes", type: "textarea", value: str(a.notes) },
+        { name: "roleIds", label: "Roles", type: "multi", options: roleOpts(), selected: personRoleIds() },
+        { name: "primaryRoleId", label: "Primary role", type: "select", options: [{ value: "", label: "—" }, ...roleOpts()], value: personPrimaryRole() },
+      ];
+    case "role":
+      return [
+        { name: "name", label: "Name", type: "text", required: true, value: str(a.name) },
+        { name: "description", label: "Description", type: "textarea", value: str(a.description) },
+        color("#7357e8"),
+      ];
+    case "group":
+      return [
+        { name: "name", label: "Name", type: "text", required: true, value: str(a.name) },
+        { name: "description", label: "Description", type: "textarea", value: str(a.description) },
+        color("#7357e8"),
+        { name: "personIds", label: "Members", type: "multi", options: peopleOpts(), selected: groupMemberIds() },
+      ];
   }
 }
 
@@ -109,11 +153,10 @@ function fieldHtml(f: Field): string {
   if (f.type === "date") return `<div class="field">${label}<input id="${id}" type="date" value="${esc(f.value ?? "")}"></div>`;
   if (f.type === "number") return `<div class="field">${label}<input id="${id}" type="number" min="0" max="100" value="${esc(f.value ?? "0")}"></div>`;
   if (f.type === "select") return `<div class="field">${label}<select id="${id}">${f.options.map((o) => `<option value="${esc(o.value)}"${o.value === (f.value ?? "") ? " selected" : ""}>${esc(o.label)}</option>`).join("")}</select></div>`;
-  if (f.type === "lanes") {
-    const items = (ctx.lanes ?? []);
-    const body = items.length
-      ? `<div class="people">${items.map((l) => `<label class="chk"><input type="checkbox" name="${id}" value="${esc(str(l.id))}"${f.selected.includes(str(l.id)) ? " checked" : ""}> ${esc(str(l.name) || "Lane")}</label>`).join("")}</div>`
-      : '<p class="muted-s">No lanes in this project.</p>';
+  if (f.type === "multi") {
+    const body = f.options.length
+      ? `<div class="people">${f.options.map((o) => `<label class="chk"><input type="checkbox" name="${id}" value="${esc(o.value)}"${f.selected.includes(o.value) ? " checked" : ""}> ${esc(o.label)}</label>`).join("")}</div>`
+      : '<p class="muted-s">None available.</p>';
     return `<div class="field">${label}${body}</div>`;
   }
   // color
@@ -159,6 +202,33 @@ function buildAction(): Record<string, unknown> | { error: string } {
     if (!deliveryDate) return { error: "Delivery date is required." };
     const base = { projectId, title, description: val("f_description"), deliveryDate, progress: Math.max(0, Math.min(100, Number(val("f_progress")) || 0)), color: radio("f_color") || "#5368f4" };
     return editing ? { action: "deliverable.update", deliverableId: entityId, expectedVersion: ver, ...base } : { action: "deliverable.create", ...base };
+  }
+  if (kind === "person") {
+    if (!projectId || !workspaceId) return { error: "A person needs a project and workspace in scope." };
+    const fullName = val("f_fullName");
+    if (!fullName) return { error: "Full name is required." };
+    const base = {
+      projectId, workspaceId, personKind: val("f_personKind") || "team_member", fullName,
+      email: val("f_email"), roleTitle: val("f_roleTitle"), organizationName: val("f_organizationName"),
+      level: val("f_level") || null, allocation: Math.max(0, Math.min(100, Number(val("f_allocation")) || 0)),
+      availabilityNote: val("f_availabilityNote"), notes: val("f_notes"),
+      roleIds: checks("f_roleIds"), primaryRoleId: val("f_primaryRoleId") || null, newRoleName: "",
+    };
+    return editing ? { action: "person.update", personId: entityId, expectedVersion: ver, ...base } : { action: "person.create", ...base };
+  }
+  if (kind === "role") {
+    if (!projectId || !workspaceId) return { error: "A role needs a project and workspace in scope." };
+    const name = val("f_name");
+    if (!name) return { error: "Name is required." };
+    const base = { projectId, workspaceId, name, description: val("f_description"), color: radio("f_color") || "#7357e8" };
+    return editing ? { action: "role.update", roleId: entityId, expectedVersion: ver, ...base } : { action: "role.create", ...base };
+  }
+  if (kind === "group") {
+    if (!projectId || !workspaceId) return { error: "A group needs a project and workspace in scope." };
+    const name = val("f_name");
+    if (!name) return { error: "Name is required." };
+    const base = { projectId, workspaceId, name, description: val("f_description"), color: radio("f_color") || "#7357e8", personIds: checks("f_personIds") };
+    return editing ? { action: "group.update", groupId: entityId, expectedVersion: ver, ...base } : { action: "group.create", ...base };
   }
   // pto
   if (!projectId || !workspaceId) return { error: "Time off needs a project and workspace in scope." };
@@ -258,7 +328,7 @@ root.innerHTML = `<div class="card">${badge("Lane")}<h1>Loading…</h1></div>`;
 app.ontoolinput = (params: { arguments?: Record<string, unknown> }) => {
   const a = params?.arguments ?? {};
   const k = str(a.kind);
-  if (k === "milestone" || k === "phase" || k === "deliverable" || k === "pto") kind = k;
+  if (["milestone", "phase", "deliverable", "pto", "person", "role", "group"].includes(k)) kind = k as Kind;
   projectId = str(a.projectId) || undefined;
   workspaceId = str(a.workspaceId) || undefined;
   entityId = str(a.entityId) || undefined;
