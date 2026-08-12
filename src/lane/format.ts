@@ -90,6 +90,16 @@ export function workspacesMarkdown(workspaces: LaneWorkspace[]): string {
  */
 export function describeAction(action: Record<string, unknown>): string {
   const kind = str(action.action) || "(unknown action)";
+  // Bulk activity update: render the count + the field changes, not the raw id
+  // list and a `[object Object]` set.
+  if (kind === "activity.bulkUpdate") {
+    const count = Array.isArray(action.activityIds) ? action.activityIds.length : 0;
+    const set = action.set && typeof action.set === "object" ? action.set as Record<string, unknown> : {};
+    const changes = Object.entries(set)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => `- **${key}** → ${value === null ? "cleared" : str(value)}`);
+    return [`\`activity.bulkUpdate\``, `- **activities**: ${count}`, ...changes].join("\n");
+  }
   const skip = new Set(["action"]);
   const fields = Object.entries(action)
     .filter(([key, value]) => !skip.has(key) && value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0) && value !== "")

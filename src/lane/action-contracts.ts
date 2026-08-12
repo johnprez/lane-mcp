@@ -24,6 +24,24 @@ export const LaneAgentActionSchema = z.discriminatedUnion("action", [
   Base.extend({ action: z.literal("activity.create"), title: z.string().trim().min(1).max(300), description: z.string().max(8_000).default(""), status: z.enum(["backlog", "ready", "in_progress", "blocked", "done", "canceled"]).default("backlog"), priority: z.enum(["none", "low", "medium", "high", "urgent"]).default("none"), laneId: Id.nullable().default(null), milestoneId: Id.nullable().default(null), startDate: DateOnly.nullable().default(null), dueDate: DateOnly.nullable().default(null), progress: z.number().int().min(0).max(100).default(0), color: Color.nullable().default(null), ownerPersonIds: z.array(Id).max(200).default([]), ownerGroupIds: z.array(Id).max(100).default([]) }),
   Base.extend({ action: z.literal("activity.update"), activityId: Id, expectedVersion: z.number().int().positive(), title: z.string().trim().min(1).max(300), description: z.string().max(8_000).default(""), status: z.enum(["backlog", "ready", "in_progress", "blocked", "done", "canceled"]), priority: z.enum(["none", "low", "medium", "high", "urgent"]), laneId: Id.nullable(), milestoneId: Id.nullable(), startDate: DateOnly.nullable(), dueDate: DateOnly.nullable(), progress: z.number().int().min(0).max(100), color: Color.nullable(), ownerPersonIds: z.array(Id).max(200).default([]), ownerGroupIds: z.array(Id).max(100).default([]) }),
   Base.extend({ action: z.literal("activity.delete"), activityId: Id, expectedVersion: z.number().int().positive() }),
+  // One approval, one server round-trip, for changing the same field(s) on many
+  // activities at once (e.g. "set all to Ready"). Only the keys present in `set`
+  // change; every other field — including owners — is preserved per activity. No
+  // expectedVersion: the server reads and bumps each activity's version.
+  Base.extend({
+    action: z.literal("activity.bulkUpdate"),
+    activityIds: z.array(Id).min(1).max(500),
+    set: z.object({
+      status: z.enum(["backlog", "ready", "in_progress", "blocked", "done", "canceled"]).optional(),
+      priority: z.enum(["none", "low", "medium", "high", "urgent"]).optional(),
+      laneId: Id.nullable().optional(),
+      milestoneId: Id.nullable().optional(),
+      startDate: DateOnly.nullable().optional(),
+      dueDate: DateOnly.nullable().optional(),
+      progress: z.number().int().min(0).max(100).optional(),
+      color: Color.nullable().optional(),
+    }).strict().refine((set) => Object.values(set).some((value) => value !== undefined), { message: "Set at least one field to change." }),
+  }),
   Base.extend({ action: z.literal("task.create"), activityId: Id, name: z.string().trim().min(1).max(300), personIds: z.array(Id).max(200).default([]), isDone: z.boolean().default(false), note: z.string().trim().max(8_000).default(""), progress: z.number().int().min(0).max(100).default(0) }),
   Base.extend({ action: z.literal("task.update"), activityId: Id, taskId: Id, expectedVersion: z.number().int().positive(), name: z.string().trim().min(1).max(300), personIds: z.array(Id).max(200).default([]), isDone: z.boolean(), note: z.string().trim().max(8_000).default(""), progress: z.number().int().min(0).max(100).default(0) }),
   Base.extend({ action: z.literal("task.delete"), activityId: Id, taskId: Id, expectedVersion: z.number().int().positive() }),

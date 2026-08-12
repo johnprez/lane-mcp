@@ -108,12 +108,12 @@ export type Database = {
         Timestamped & {
           id: string; workspace_id: string; project_id: string; tokens: Json; guidelines_md: string;
           export_design_md: string; source_asset_id: string | null; use_for_exports: boolean; use_for_plan: boolean;
-          ai_run_id: string | null; snapshot_version: string; version: number; created_by: string;
+          logo_data_url: string | null; ai_run_id: string | null; snapshot_version: string; version: number; created_by: string;
         },
         {
           id?: string; workspace_id: string; project_id: string; tokens?: Json; guidelines_md?: string;
           export_design_md?: string; source_asset_id?: string | null; use_for_exports?: boolean; use_for_plan?: boolean;
-          ai_run_id?: string | null; snapshot_version?: string; version?: number; created_by: string;
+          logo_data_url?: string | null; ai_run_id?: string | null; snapshot_version?: string; version?: number; created_by: string;
           created_at?: string; updated_at?: string;
         }
       >;
@@ -186,8 +186,8 @@ export type Database = {
         { id?: string; workspace_id: string; project_id: string; predecessor_type: "work_item" | "deliverable"; predecessor_id: string; successor_type: "work_item" | "deliverable"; successor_id: string; lag_days?: number; version?: number; created_by?: string | null; created_at?: string; updated_at?: string }
       >;
       plan_shared_lanes: TableDefinition<
-        { id: string; workspace_id: string; project_id: string; source_project_id: string; source_workstream_id: string; sort_key: string; created_by: string; created_at: string },
-        { id?: string; workspace_id: string; project_id: string; source_project_id: string; source_workstream_id: string; sort_key?: string; created_by: string; created_at?: string }
+        { id: string; workspace_id: string; project_id: string; source_project_id: string; source_workstream_id: string | null; kind: "workstream" | "milestones" | "deliverables"; sort_key: string; created_by: string; created_at: string },
+        { id?: string; workspace_id: string; project_id: string; source_project_id: string; source_workstream_id?: string | null; kind?: "workstream" | "milestones" | "deliverables"; sort_key?: string; created_by: string; created_at?: string }
       >;
       project_updates: TableDefinition<
         Timestamped & {
@@ -716,13 +716,14 @@ export type Database = {
         Returns: Json;
       };
       upsert_workspace_team_group: { Args: { p_workspace_id: string; p_project_id: string; p_group_id: string | null; p_expected_version: number | null; p_name: string; p_description: string; p_color: string; p_person_ids: string[] }; Returns: string };
-      upsert_project_brand_profile: { Args: { p_workspace_id: string; p_project_id: string; p_expected_version: number | null; p_tokens: Json; p_guidelines_md: string; p_use_for_exports: boolean; p_use_for_plan: boolean; p_source_asset_id: string | null }; Returns: Json };
+      upsert_project_brand_profile: { Args: { p_workspace_id: string; p_project_id: string; p_expected_version: number | null; p_tokens: Json; p_guidelines_md: string; p_use_for_exports: boolean; p_use_for_plan: boolean; p_source_asset_id: string | null; p_logo_data_url: string | null }; Returns: Json };
       set_project_export_design: { Args: { p_workspace_id: string; p_project_id: string; p_export_design_md: string }; Returns: Json };
       start_brand_analysis_run: { Args: { p_workspace_id: string; p_project_id: string; p_model: string; p_input_refs: Json }; Returns: string };
       complete_and_store_brand_analysis: { Args: { p_workspace_id: string; p_run_id: string; p_project_id: string; p_output: Json; p_tokens: Json; p_guidelines_md: string; p_source_asset_id: string | null; p_input_tokens: number; p_output_tokens: number }; Returns: Json };
       replace_work_item_planning_assignments: { Args: { p_workspace_id: string; p_project_id: string; p_work_item_id: string; p_expected_version: number; p_person_ids: string[]; p_group_ids: string[] }; Returns: number };
       clear_project: { Args: { p_workspace_id: string; p_project_id: string; p_expected_version: number }; Returns: Json };
       update_work_item_plan_with_owners: { Args: { p_workspace_id: string; p_project_id: string; p_work_item_id: string; p_expected_version: number; p_title: string; p_description: string; p_status: Database["public"]["Enums"]["work_item_status"]; p_priority: Database["public"]["Enums"]["priority_level"]; p_workstream_id: string | null; p_milestone_id: string | null; p_starts_at: string | null; p_due_at: string | null; p_progress: number; p_color: string | null; p_lane_color_shade: number; p_person_ids: string[]; p_group_ids: string[] }; Returns: Json };
+      bulk_update_work_items: { Args: { p_workspace_id: string; p_project_id: string; p_ids: string[]; p_set: Json }; Returns: Json };
       upsert_work_item_note: { Args: { p_workspace_id: string; p_project_id: string; p_work_item_id: string; p_note_id: string | null; p_expected_version: number | null; p_body: string }; Returns: Json };
       delete_work_item_note: { Args: { p_workspace_id: string; p_project_id: string; p_work_item_id: string; p_note_id: string; p_expected_version: number }; Returns: string };
       upsert_milestone_note: { Args: { p_workspace_id: string; p_project_id: string; p_milestone_id: string; p_note_id: string | null; p_expected_version: number | null; p_body: string }; Returns: Json };
