@@ -29,6 +29,25 @@ export function summarizeContextMarkdown(ctx: LaneContext): string {
   const scope = ctx.projects.length === 1 ? "1 project" : `${ctx.projects.length} projects`;
   lines.push(`**Lane context** — ${scope} · ${count(ctx.milestones)} milestones · ${count(ctx.activities)} activities · ${count(ctx.people)} people`);
   lines.push("");
+
+  // Deterministic "what needs attention" read — same truth the Now page leads
+  // with, so a status answer needs no AI briefing.
+  const { summary, attention } = ctx.insights;
+  if (summary.needAttention === 0) {
+    lines.push("**Needs attention** — every project is clear right now (no at-risk/off-track health, blocked work, or slipped milestones).");
+  } else {
+    lines.push(`**Needs attention** — ${summary.needAttention} of ${summary.activeProjects} project${summary.activeProjects === 1 ? "" : "s"}: ${summary.offTrack} off-track · ${summary.atRisk} at-risk · ${summary.blockedItems} blocked item${summary.blockedItems === 1 ? "" : "s"} · ${summary.slippedMilestones} slipped milestone${summary.slippedMilestones === 1 ? "" : "s"}.`);
+    for (const item of attention.slice(0, 8)) {
+      const reasons = [
+        item.blockedItems > 0 ? `${item.blockedItems} blocked` : null,
+        item.milestoneNeedsAttention && item.nextMilestone ? `“${item.nextMilestone}” needs review` : null,
+        item.health === "off_track" || item.health === "at_risk" ? item.health.replace("_", "-") : null,
+      ].filter(Boolean).join(" · ");
+      lines.push(`- **${item.projectName}** — ${reasons || "needs a look"}`);
+    }
+  }
+  lines.push("");
+
   for (const project of ctx.projects.slice(0, 25)) {
     const id = str(project.id);
     const projectMilestones = ctx.milestones.filter((m) => str(m.project_id) === id);

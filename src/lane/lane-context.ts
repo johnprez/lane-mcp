@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-import type { Database } from "./database.types";
+import type { Database, HealthStatus, MilestoneStatus } from "./database.types";
 
 /**
  * The user-scoped Lane plan-graph read, extracted so it has exactly one
@@ -46,22 +46,27 @@ function optionalContext<T>(label: string, result: ContextRead<T>, fallback: T):
 type LaneContextClient = ReturnType<typeof createClient<Database>>;
 type LaneContextRow = Record<string, unknown>;
 
+// Kept deliberately lean: this payload is re-sent on every step of an agent turn,
+// so oversized reads are the main driver of Ask Lane slowness and hitting the
+// session token ceiling. These cover realistic single-project plans; genuinely
+// huge plans read a bounded top slice rather than the whole graph.
 const CONTEXT_ROW_LIMITS = {
-  lanes: 120,
-  phases: 120,
-  milestones: 250,
-  activities: 600,
-  tasks: 1_200,
-  events: 250,
-  people: 500,
-  roles: 250,
-  groups: 250,
-  assignments: 2_000,
-  notes: 400,
-  dependencies: 1_000,
-  links: 500,
-  deliverables: 250,
-  timeOff: 300,
+  lanes: 60,
+  phases: 60,
+  milestones: 100,
+  activities: 200,
+  tasks: 250,
+  events: 100,
+  people: 200,
+  roles: 120,
+  groups: 120,
+  assignments: 400,
+  notes: 60,
+  dependencies: 300,
+  // Opt-in sections (pulled only when the question calls for them).
+  deliverables: 200,
+  timeOff: 250,
+  links: 300,
 } as const;
 
 function compactText(value: unknown, maximum: number): unknown {
@@ -77,10 +82,10 @@ function compactText(value: unknown, maximum: number): unknown {
 function compactRows(rows: LaneContextRow[], limit: number): LaneContextRow[] {
   return rows.slice(0, limit).map((row) => ({
     ...row,
-    name: compactText(row.name, 180),
-    title: compactText(row.title, 240),
-    description: compactText(row.description, 720),
-    body: compactText(row.body, 600),
+    name: compactText(row.name, 120),
+    title: compactText(row.title, 160),
+    description: compactText(row.description, 280),
+    body: compactText(row.body, 160),
   }));
 }
 
@@ -90,7 +95,7 @@ function rowContextRead(result: { data: unknown[] | null; error: { code?: string
 
 async function readWorkspacePeople(db: LaneContextClient, workspaceIds: string[]): Promise<ContextRead<LaneContextRow[]>> {
   const rich = await db.from("workspace_people")
-    .select("id, workspace_id, full_name, email, person_kind, role_title, organization_name, default_allocation_percent, level, notes, availability_note, version")
+    .select("id, workspace_id, full_name, email, person_kind, role_title, organization_name, default_allocation_percent, level, version")
     .in("workspace_id", workspaceIds)
     .is("archived_at", null);
   if (!rich.error) return rowContextRead(rich);
@@ -139,16 +144,126 @@ export type LaneContext = {
   assignments: Record<string, LaneContextRow[]>;
   notes: Record<string, LaneContextRow[]>;
   dependencies: LaneContextRow[];
-  links: LaneContextRow[];
-  deliverables: LaneContextRow[];
-  timeOff: LaneContextRow[];
+  // Deterministic, LLM-free portfolio read — the same "what needs attention"
+  // truth the Now page leads with, so a connected agent doesn't have to
+  // re-derive it (and never needs an AI briefing just to answer status).
+  insights: LaneContextInsights;
+  // Present only when requested via `include` — see getLaneContext.
+  timeOff?: LaneContextRow[];
+  deliverables?: LaneContextRow[];
+  links?: LaneContextRow[];
 };
+
+export type LaneContextAttentionItem = {
+  projectId: string;
+  projectName: string;
+  health: HealthStatus;
+  blockedItems: number;
+  nextMilestone: string | null;
+  nextMilestoneDate: string | null;
+  milestoneNeedsAttention: boolean;
+};
+
+export type LaneContextInsights = {
+  today: string;
+  summary: {
+    activeProjects: number;
+    needAttention: number;
+    atRisk: number;
+    offTrack: number;
+    blockedItems: number;
+    slippedMilestones: number;
+  };
+  attention: LaneContextAttentionItem[];
+};
+
+/** Optional context sections Eve pulls on demand based on the question. */
+export type LaneContextSection = "timeOff" | "deliverables" | "links";
 
 const EMPTY_CONTEXT: LaneContext = {
   projects: [], lanes: [], phases: [], milestones: [], activities: [], tasks: [],
-  events: [], people: [], roles: [], groups: [], assignments: {}, notes: {}, dependencies: [], links: [],
-  deliverables: [], timeOff: [],
+  events: [], people: [], roles: [], groups: [], assignments: {}, notes: {}, dependencies: [],
+  insights: {
+    today: new Date().toISOString().slice(0, 10),
+    summary: { activeProjects: 0, needAttention: 0, atRisk: 0, offTrack: 0, blockedItems: 0, slippedMilestones: 0 },
+    attention: [],
+  },
 };
+
+/**
+ * Compute the deterministic portfolio read from the already-fetched context
+ * rows — no AI, no extra query. Mirrors the canonical semantics in
+ * src/lib/insights/metrics.ts (requiresAttention / milestoneNeedsAttention /
+ * attentionRank) and buildProjectDirectory's next-milestone selection; kept
+ * inline so this file stays import-portable for the standalone eve runtime.
+ */
+function deterministicInsights(
+  projects: Array<{ id: string; name: string; health: HealthStatus }>,
+  activities: ReadonlyArray<Record<string, unknown>>,
+  milestones: ReadonlyArray<Record<string, unknown>>,
+  today: string,
+): LaneContextInsights {
+  const blockedByProject = new Map<string, number>();
+  for (const activity of activities) {
+    if (activity.status === "blocked" && typeof activity.project_id === "string") {
+      blockedByProject.set(activity.project_id, (blockedByProject.get(activity.project_id) ?? 0) + 1);
+    }
+  }
+  const milestonesByProject = new Map<string, Array<{ title: string; status: MilestoneStatus; targetDate: string | null }>>();
+  for (const milestone of milestones) {
+    if (typeof milestone.project_id !== "string") continue;
+    const list = milestonesByProject.get(milestone.project_id) ?? [];
+    list.push({
+      title: typeof milestone.title === "string" ? milestone.title : "",
+      status: milestone.status as MilestoneStatus,
+      targetDate: typeof milestone.target_date === "string" ? milestone.target_date : null,
+    });
+    milestonesByProject.set(milestone.project_id, list);
+  }
+  const needsAttention = (status: MilestoneStatus | null, targetDate: string | null) =>
+    Boolean(status && (status === "missed" || (targetDate !== null && targetDate < today)));
+  const nextMilestoneFor = (projectId: string) => {
+    const open = (milestonesByProject.get(projectId) ?? []).filter((m) => m.status !== "completed" && m.status !== "canceled");
+    const overdue = open
+      .filter((m) => needsAttention(m.status, m.targetDate))
+      .sort((a, b) => (b.targetDate ?? "").localeCompare(a.targetDate ?? ""))[0];
+    return overdue ?? open.find((m) => !m.targetDate || m.targetDate >= today) ?? null;
+  };
+  const rank = (item: LaneContextAttentionItem) =>
+    (item.health === "off_track" ? 30 : item.health === "at_risk" ? 20 : 0) +
+    (item.milestoneNeedsAttention ? 10 : 0) + item.blockedItems;
+
+  let needAttention = 0, atRisk = 0, offTrack = 0, blockedItems = 0, slippedMilestones = 0;
+  const attention: LaneContextAttentionItem[] = [];
+  for (const project of projects) {
+    const blocked = blockedByProject.get(project.id) ?? 0;
+    const next = nextMilestoneFor(project.id);
+    const nextNeedsAttention = needsAttention(next?.status ?? null, next?.targetDate ?? null);
+    const requires = project.health === "at_risk" || project.health === "off_track" || blocked > 0 || nextNeedsAttention;
+    if (requires) needAttention += 1;
+    if (project.health === "at_risk") atRisk += 1;
+    if (project.health === "off_track") offTrack += 1;
+    if (nextNeedsAttention) slippedMilestones += 1;
+    blockedItems += blocked;
+    if (requires) {
+      attention.push({
+        projectId: project.id,
+        projectName: project.name,
+        health: project.health,
+        blockedItems: blocked,
+        nextMilestone: next?.title ?? null,
+        nextMilestoneDate: next?.targetDate ?? null,
+        milestoneNeedsAttention: nextNeedsAttention,
+      });
+    }
+  }
+  attention.sort((a, b) => rank(b) - rank(a));
+  return {
+    today,
+    summary: { activeProjects: projects.length, needAttention, atRisk, offTrack, blockedItems, slippedMilestones },
+    attention: attention.slice(0, 10),
+  };
+}
 
 /**
  * Build an RLS-scoped Supabase client from a user access token. Kept coupled to
@@ -168,15 +283,21 @@ export function laneContextClient(accessToken: string): LaneContextClient {
 /**
  * Read the authenticated user's Lane plan graph. Passing `projectId` narrows the
  * read to that one project; omitting it widens to the workspace (bounded).
+ *
+ * The base read stays lean (activities, tasks, milestones, people, etc.).
+ * Heavier/peripheral sections — time off, deliverables, links — are pulled ONLY
+ * when named in `include`, so Eve fetches them on demand when a question calls
+ * for them rather than paying for them on every turn.
  */
-export async function getLaneContext(params: { accessToken: string; projectId?: string }): Promise<LaneContext> {
+export async function getLaneContext(params: { accessToken: string; projectId?: string; include?: readonly LaneContextSection[] }): Promise<LaneContext> {
   const { accessToken, projectId } = params;
+  const want = new Set(params.include ?? []);
   const db = laneContextClient(accessToken);
   const projects = await db.from("projects")
     .select("id, workspace_id, project_key, name, description, status, health, priority, owner_id, starts_on, due_on, version, updated_at")
     .is("archived_at", null)
     .order("updated_at", { ascending: false })
-    .limit(projectId ? 1 : 25)
+    .limit(projectId ? 1 : 12)
     .match(projectId ? { id: projectId } : {});
   if (projects.error) {
     logContextFailure("projects", projects.error);
@@ -197,7 +318,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     version: project.version,
     updated_at: project.updated_at,
   }));
-  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies, links, deliverables, deliverableNotes, timeOff, personRoles, groupMembers] = await Promise.all([
+  const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies] = await Promise.all([
     db.from("workstreams").select("id, project_id, name, description, status, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.lanes),
     db.from("project_phases").select("id, project_id, name, description, starts_on, ends_on, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.phases),
     db.from("milestones").select("id, project_id, title, description, status, target_date, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.milestones),
@@ -208,7 +329,10 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     db.from("planning_events").select("id, project_id, title, description, starts_at, ends_at, all_day, timezone, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).eq("scope", "project").is("archived_at", null).limit(CONTEXT_ROW_LIMITS.events),
     readWorkspacePeople(db, workspaceIds),
     db.from("workspace_role_catalog").select("id, workspace_id, name, description, color, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.roles),
-    db.from("workspace_team_groups").select("id, workspace_id, name, description, color, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.groups),
+    // Team groups are project-scoped: only surface groups belonging to the
+    // authorized project(s), and carry project_id so Eve associates each group
+    // with its project.
+    db.from("workspace_team_groups").select("id, workspace_id, project_id, name, description, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.groups),
     readProjectPlanningPeople(db, workspaceIds, projectIds),
     db.from("workstream_planning_people").select("project_id, workstream_id, person_id").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.assignments),
     db.from("milestone_planning_people").select("project_id, milestone_id, person_id").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.assignments),
@@ -221,12 +345,6 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     db.from("milestone_notes").select("id, project_id, milestone_id, body, version, created_by, updated_by, created_at, updated_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
     db.from("planning_event_notes").select("id, project_id, event_id, body, version, created_by, updated_by, created_at, updated_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
     db.from("work_item_dependencies").select("project_id, predecessor_id, successor_id, lag_days, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.dependencies),
-    db.from("plan_object_links").select("id, project_id, object_type, object_id, url, label, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.links),
-    db.from("deliverables").select("id, project_id, title, description, delivery_date, progress, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.deliverables),
-    db.from("deliverable_notes").select("id, project_id, deliverable_id, body, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes),
-    db.from("person_time_off").select("id, workspace_id, person_id, starts_on, ends_on, note, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.timeOff),
-    db.from("workspace_person_roles").select("person_id, role_id, is_primary").in("workspace_id", workspaceIds).limit(CONTEXT_ROW_LIMITS.assignments),
-    db.from("workspace_team_group_members").select("group_id, person_id").in("workspace_id", workspaceIds).limit(CONTEXT_ROW_LIMITS.assignments),
   ]);
   // A complete plan needs its structural records. The enrichment reads below are
   // valuable but cannot prevent understanding a plan when a newly deployed
@@ -254,12 +372,28 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const milestoneNoteRows = optionalContext("milestone-notes", milestoneNotes, []);
   const eventNoteRows = optionalContext("event-notes", eventNotes, []);
   const dependencyRows = optionalContext("dependencies", dependencies, []);
-  const linkRows = optionalContext("links", links, []);
-  const deliverableRows = optionalContext("deliverables", deliverables, []);
-  const deliverableNoteRows = optionalContext("deliverable-notes", deliverableNotes, []);
-  const timeOffRows = optionalContext("time-off", timeOff, []);
-  const personRoleRows = optionalContext("person-roles", personRoles, []);
-  const groupMemberRows = optionalContext("group-members", groupMembers, []);
+
+  // Opt-in sections: only hit the DB for what the caller asked for.
+  const empty = { data: [] as unknown[], error: null };
+  const [timeOffRes, deliverablesRes, deliverableNotesRes, linksRes] = await Promise.all([
+    want.has("timeOff")
+      ? db.from("person_time_off").select("id, workspace_id, person_id, starts_on, ends_on, note, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.timeOff)
+      : Promise.resolve(empty),
+    want.has("deliverables")
+      ? db.from("deliverables").select("id, project_id, title, description, delivery_date, progress, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.deliverables)
+      : Promise.resolve(empty),
+    want.has("deliverables")
+      ? db.from("deliverable_notes").select("id, project_id, deliverable_id, body, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes)
+      : Promise.resolve(empty),
+    want.has("links")
+      ? db.from("plan_object_links").select("id, project_id, object_type, object_id, url, label, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.links)
+      : Promise.resolve(empty),
+  ]);
+  const timeOffRows = optionalContext("time-off", timeOffRes, []) as LaneContextRow[];
+  const deliverableRows = optionalContext("deliverables", deliverablesRes, []) as LaneContextRow[];
+  const deliverableNoteRows = optionalContext("deliverable-notes", deliverableNotesRes, []) as LaneContextRow[];
+  const linkRows = optionalContext("links", linksRes, []) as LaneContextRow[];
+
   return {
     projects: projectContext as unknown as LaneContextRow[],
     lanes: compactRows((lanes.data ?? []) as LaneContextRow[], CONTEXT_ROW_LIMITS.lanes),
@@ -280,18 +414,22 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
       events: compactRows(eventPeopleRows ?? [], CONTEXT_ROW_LIMITS.assignments),
       eventGroups: compactRows(eventGroupRows ?? [], CONTEXT_ROW_LIMITS.assignments),
       phaseLanes: compactRows(phaseLaneRows ?? [], CONTEXT_ROW_LIMITS.assignments),
-      personRoles: compactRows(personRoleRows ?? [], CONTEXT_ROW_LIMITS.assignments),
-      groupMembers: compactRows(groupMemberRows ?? [], CONTEXT_ROW_LIMITS.assignments),
     },
     notes: {
       activities: compactRows(activityNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
       milestones: compactRows(milestoneNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
       events: compactRows(eventNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
-      deliverables: compactRows(deliverableNoteRows ?? [], CONTEXT_ROW_LIMITS.notes),
+      ...(want.has("deliverables") ? { deliverables: compactRows(deliverableNoteRows ?? [], CONTEXT_ROW_LIMITS.notes) } : {}),
     },
     dependencies: compactRows(dependencyRows ?? [], CONTEXT_ROW_LIMITS.dependencies),
-    links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links),
-    deliverables: compactRows(deliverableRows ?? [], CONTEXT_ROW_LIMITS.deliverables),
-    timeOff: compactRows(timeOffRows ?? [], CONTEXT_ROW_LIMITS.timeOff),
+    insights: deterministicInsights(
+      projectContext,
+      (activities.data ?? []) as Array<Record<string, unknown>>,
+      (milestones.data ?? []) as Array<Record<string, unknown>>,
+      new Date().toISOString().slice(0, 10),
+    ),
+    ...(want.has("timeOff") ? { timeOff: compactRows(timeOffRows ?? [], CONTEXT_ROW_LIMITS.timeOff) } : {}),
+    ...(want.has("deliverables") ? { deliverables: compactRows(deliverableRows ?? [], CONTEXT_ROW_LIMITS.deliverables) } : {}),
+    ...(want.has("links") ? { links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links) } : {}),
   };
 }
