@@ -18,6 +18,7 @@ const apps = [
   { name: "activity", entry: "src/app-src/activity.ts", exportName: "ACTIVITY_APP_HTML" },
   { name: "entity", entry: "src/app-src/entity.ts", exportName: "ENTITY_APP_HTML" },
   { name: "deps", entry: "src/app-src/deps.ts", exportName: "DEPS_APP_HTML" },
+  { name: "tasks", entry: "src/app-src/tasks.ts", exportName: "TASKS_APP_HTML" },
 ];
 
 // Shared shell + Lane-themed, light/dark-aware styles. Each app owns its markup
@@ -149,6 +150,44 @@ textarea { resize:vertical; }
 .link-a:hover { text-decoration:underline; }
 .addrow { display:flex; gap:8px; align-items:flex-start; margin-top:10px; }
 .addrow input, .addrow textarea { flex:1; }
+
+/* Tasks board */
+.tabs-filter { margin-top:12px; }
+.lane-group { margin-top:14px; }
+.lane-h { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+.lane-name { font-size:11px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.lane-count { font-size:11px; font-weight:650; color:var(--muted); font-variant-numeric:tabular-nums; }
+.act { border:1px solid var(--line); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+.act-top { display:flex; align-items:center; gap:8px; }
+.act-title { flex:1; min-width:0; font-weight:600; font-size:13.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0; }
+.act-title:hover { color:var(--purple); background:transparent; text-decoration:underline; }
+.act-done .act-title { color:var(--muted); text-decoration:line-through; }
+.act-prog { display:flex; align-items:center; gap:8px; margin-top:8px; }
+.act-pct { font-size:11px; font-weight:650; color:var(--muted); font-variant-numeric:tabular-nums; flex:none; }
+.act-due { font-size:11px; color:var(--muted); flex:none; }
+.tprog { flex:1; min-width:70px; height:5px; border-radius:999px; background:var(--subtle); overflow:hidden; }
+.tprog > i { display:block; height:100%; border-radius:999px; background:var(--purple); }
+.st { flex:none; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--muted); background:var(--subtle); }
+.st-in_progress { color:var(--purple); background:var(--purple-bg); }
+.st-blocked { color:var(--red); background:color-mix(in srgb, var(--red) 15%, transparent); }
+.st-done { color:var(--jade); background:color-mix(in srgb, var(--jade) 15%, transparent); }
+.prio-hi { flex:none; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--amber); background:color-mix(in srgb, var(--amber) 16%, transparent); }
+.avs { display:inline-flex; align-items:center; flex:none; }
+.av { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; margin-left:-6px; border:1.5px solid var(--card-bg); border-radius:50%; background:var(--purple-bg); color:var(--purple); font-size:9px; font-weight:700; }
+.av:first-child { margin-left:0; }
+.av-more { background:var(--subtle); color:var(--muted); }
+.tk-toggle { appearance:none; flex:none; border:1px solid var(--line); border-radius:999px; background:var(--card-bg); color:var(--muted); font:inherit; font-size:10px; font-weight:700; padding:1px 8px; cursor:pointer; font-variant-numeric:tabular-nums; }
+.tk-toggle:hover { border-color:var(--purple); color:var(--purple); }
+.tk-list { margin-top:8px; padding-top:8px; border-top:1px solid var(--line); display:flex; flex-direction:column; gap:5px; }
+.tk { display:flex; align-items:center; gap:8px; font-size:12.5px; }
+.tk-box { display:grid; place-items:center; flex:none; width:15px; height:15px; border:1.5px solid var(--line); border-radius:4px; color:transparent; font-size:9px; font-weight:800; }
+.tk-box.on { border-color:var(--purple); background:var(--purple); color:#fff; }
+.tk-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); }
+.tk-name.done { color:var(--muted); text-decoration:line-through; }
+.tk-add, .lane-add { display:inline-block; margin-top:8px; padding:4px 6px; border-radius:7px; color:var(--purple); font-size:12px; font-weight:620; width:auto; }
+.tk-add:hover, .lane-add:hover { background:var(--purple-bg); }
+.lane-add { margin-top:2px; }
+.empty { margin-top:14px; }
 `;
 
 function pageHtml(scriptJs) {

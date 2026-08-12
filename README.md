@@ -22,6 +22,7 @@ support cards fall back to plain text.
 | `lane_edit_activity` | Full activity editor (Details / Tasks / Notes / Links), create or edit. |
 | `lane_edit_record` | Editor for a milestone, phase, deliverable, time-off entry, team member, role, or group. |
 | `lane_edit_dependencies` | View / add / remove activity dependencies for a project. |
+| `lane_view_tasks` | Interactive Tasks board — activities grouped by lane with progress, owner avatars, and their checklist tasks (Active/All/Done filters). |
 
 ## Prerequisites
 

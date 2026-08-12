@@ -13,6 +13,7 @@ import { FORM_APP_HTML } from "./generated/form-app.js";
 import { ACTIVITY_APP_HTML } from "./generated/activity-app.js";
 import { ENTITY_APP_HTML } from "./generated/entity-app.js";
 import { DEPS_APP_HTML } from "./generated/deps-app.js";
+import { TASKS_APP_HTML } from "./generated/tasks-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -38,6 +39,7 @@ const FORM_APP_URI = "ui://lane/form";
 const ACTIVITY_APP_URI = "ui://lane/activity";
 const ENTITY_APP_URI = "ui://lane/record";
 const DEPS_APP_URI = "ui://lane/dependencies";
+const TASKS_APP_URI = "ui://lane/tasks";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   server.registerResource(
@@ -90,6 +92,14 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     DEPS_APP_URI,
     { title: "Ask Lane dependencies", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: DEPS_APP_HTML }] }),
+  );
+  // Tasks board: activities grouped by lane with progress, owner avatars, and
+  // their checklist tasks — read-only, with tap-through to the editors.
+  server.registerResource(
+    "lane-tasks-app",
+    TASKS_APP_URI,
+    { title: "Ask Lane tasks board", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: TASKS_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -259,6 +269,22 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     },
     async ({ projectId }) => ({
       content: [{ type: "text", text: "Opening the dependencies editor." }],
+      structuredContent: { projectId },
+    }),
+  );
+
+  server.registerTool(
+    "lane_view_tasks",
+    {
+      title: "Open the Lane tasks board",
+      description:
+        "Open the interactive Tasks board in the chat for one project — its activities grouped by lane, each with a progress bar, owner avatars, status, due date, and its checklist tasks, with Active/All/Done filters. Use this for 'show me the tasks / activities / to-dos / checklist / what's on the board' requests. Pass the active `projectId`. The board is read-only but rows are actionable: tapping an activity or an add-task/add-activity control asks to open the matching editor — so do NOT also call lane_apply_action for it; let the follow-up editor tool handle writes.",
+      inputSchema: z.object({ projectId: z.string().uuid().describe("The project whose tasks to show.") }),
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: TASKS_APP_URI } },
+    },
+    async ({ projectId }) => ({
+      content: [{ type: "text", text: "Opening the tasks board." }],
       structuredContent: { projectId },
     }),
   );
