@@ -148,11 +148,17 @@ export type LaneContext = {
   // truth the Now page leads with, so a connected agent doesn't have to
   // re-derive it (and never needs an AI briefing just to answer status).
   insights: LaneContextInsights;
+  // Brand-aware report pipeline guidance for the focused project (guideline +
+  // export design skill), so a report/export the agent shapes honors the brand.
+  // Null unless a single project is in scope and a brand profile exists.
+  brand: LaneContextBrand | null;
   // Present only when requested via `include` — see getLaneContext.
   timeOff?: LaneContextRow[];
   deliverables?: LaneContextRow[];
   links?: LaneContextRow[];
 };
+
+export type LaneContextBrand = { guidelinesMarkdown: string; exportDesignMarkdown: string };
 
 export type LaneContextAttentionItem = {
   projectId: string;
@@ -188,6 +194,7 @@ const EMPTY_CONTEXT: LaneContext = {
     summary: { activeProjects: 0, needAttention: 0, atRisk: 0, offTrack: 0, blockedItems: 0, slippedMilestones: 0 },
     attention: [],
   },
+  brand: null,
 };
 
 /**
@@ -394,6 +401,18 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const deliverableNoteRows = optionalContext("deliverable-notes", deliverableNotesRes, []) as LaneContextRow[];
   const linkRows = optionalContext("links", linksRes, []) as LaneContextRow[];
 
+  // Brand-aware report guidance for a single focused project. Additive + tolerant
+  // of the (out-of-band) profile columns not being deployed yet.
+  let brand: LaneContextBrand | null = null;
+  if (projectId) {
+    const brandResult = await db.from("project_brand_profiles").select("guidelines_md, export_design_md").eq("project_id", projectId).maybeSingle();
+    const guidelinesMarkdown = brandResult.data?.guidelines_md ?? "";
+    const exportDesignMarkdown = brandResult.data?.export_design_md ?? "";
+    if (!brandResult.error && (guidelinesMarkdown.trim() || exportDesignMarkdown.trim())) {
+      brand = { guidelinesMarkdown, exportDesignMarkdown };
+    }
+  }
+
   return {
     projects: projectContext as unknown as LaneContextRow[],
     lanes: compactRows((lanes.data ?? []) as LaneContextRow[], CONTEXT_ROW_LIMITS.lanes),
@@ -428,6 +447,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
       (milestones.data ?? []) as Array<Record<string, unknown>>,
       new Date().toISOString().slice(0, 10),
     ),
+    brand,
     ...(want.has("timeOff") ? { timeOff: compactRows(timeOffRows ?? [], CONTEXT_ROW_LIMITS.timeOff) } : {}),
     ...(want.has("deliverables") ? { deliverables: compactRows(deliverableRows ?? [], CONTEXT_ROW_LIMITS.deliverables) } : {}),
     ...(want.has("links") ? { links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links) } : {}),
