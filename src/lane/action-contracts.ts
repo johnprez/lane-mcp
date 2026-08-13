@@ -45,6 +45,29 @@ export const LaneAgentActionSchema = z.discriminatedUnion("action", [
   Base.extend({ action: z.literal("task.create"), activityId: Id, name: z.string().trim().min(1).max(300), personIds: z.array(Id).max(200).default([]), isDone: z.boolean().default(false), note: z.string().trim().max(8_000).default(""), progress: z.number().int().min(0).max(100).default(0) }),
   Base.extend({ action: z.literal("task.update"), activityId: Id, taskId: Id, expectedVersion: z.number().int().positive(), name: z.string().trim().min(1).max(300), personIds: z.array(Id).max(200).default([]), isDone: z.boolean(), note: z.string().trim().max(8_000).default(""), progress: z.number().int().min(0).max(100).default(0) }),
   Base.extend({ action: z.literal("task.delete"), activityId: Id, taskId: Id, expectedVersion: z.number().int().positive() }),
+  // Import many tasks (checklist items) in ONE approval — the intelligent path
+  // for a pasted/uploaded table of tasks. Each row names its owning activity by
+  // `activityId` (preferred, from context) OR by `activityName`, which the
+  // server resolves against the project's activities by normalized name. Rows
+  // whose activity doesn't exist are skipped and reported unless
+  // `createMissingActivities` is set, in which case the activity is created in
+  // `laneId` (or the project's first lane). No per-row approval loop, no exact
+  // ids required up front.
+  Base.extend({
+    action: z.literal("task.bulkCreate"),
+    laneId: Id.nullable().default(null),
+    createMissingActivities: z.boolean().default(false),
+    tasks: z.array(z.object({
+      activityId: Id.nullable().default(null),
+      activityName: z.string().trim().max(300).default(""),
+      name: z.string().trim().min(1).max(300),
+      isDone: z.boolean().default(false),
+      note: z.string().trim().max(8_000).default(""),
+      progress: z.number().int().min(0).max(100).default(0),
+    }).refine((task) => task.activityId !== null || task.activityName.trim().length > 0, {
+      message: "Each task needs an activityId or an activityName to attach to.",
+    })).min(1).max(500),
+  }),
   Base.extend({ action: z.literal("event.create"), title: z.string().trim().min(1).max(200), description: z.string().max(8_000).default(""), startsAt: DateTime, endsAt: DateTime.nullable().default(null), allDay: z.boolean().default(false), timezone: z.string().trim().min(1).max(80), color: Color, laneIds: z.array(Id).max(100).default([]), personIds: z.array(Id).max(200).default([]), groupIds: z.array(Id).max(100).default([]) }),
   Base.extend({ action: z.literal("event.update"), eventId: Id, expectedVersion: z.number().int().positive(), title: z.string().trim().min(1).max(200), description: z.string().max(8_000).default(""), startsAt: DateTime, endsAt: DateTime.nullable(), allDay: z.boolean(), timezone: z.string().trim().min(1).max(80), color: Color, laneIds: z.array(Id).max(100).default([]), personIds: z.array(Id).max(200).default([]), groupIds: z.array(Id).max(100).default([]) }),
   Base.extend({ action: z.literal("activityNote.create"), activityId: Id, body: z.string().trim().min(1).max(8_000) }),

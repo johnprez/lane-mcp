@@ -100,6 +100,16 @@ export function describeAction(action: Record<string, unknown>): string {
       .map(([key, value]) => `- **${key}** → ${value === null ? "cleared" : str(value)}`);
     return [`\`activity.bulkUpdate\``, `- **activities**: ${count}`, ...changes].join("\n");
   }
+  // Bulk task import: render the row count + how activities are resolved, not a
+  // huge nested `tasks` array.
+  if (kind === "task.bulkCreate") {
+    const tasks = Array.isArray(action.tasks) ? action.tasks as Array<Record<string, unknown>> : [];
+    const named = tasks.filter((task) => !task.activityId && str(task.activityName)).length;
+    const lines = [`\`task.bulkCreate\``, `- **tasks**: ${tasks.length}`];
+    if (named > 0) lines.push(`- **matched by name**: ${named}`);
+    if (action.createMissingActivities) lines.push(`- **create missing activities**: yes${action.laneId ? ` (lane ${str(action.laneId)})` : ""}`);
+    return lines.join("\n");
+  }
   const skip = new Set(["action"]);
   const fields = Object.entries(action)
     .filter(([key, value]) => !skip.has(key) && value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0) && value !== "")
