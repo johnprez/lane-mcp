@@ -56,7 +56,7 @@ export class LaneSession {
     return data.access_token;
   }
 
-  /** POST one action to the hosted write endpoint using the PAT (HMAC signing stays server-side). */
+  /** POST one lane action to the hosted write endpoint (HMAC signing stays server-side). */
   async apply(action: unknown): Promise<{ applied: boolean; action: string; message: string }> {
     const response = await fetch(`${this.apiUrl}/api/mcp/apply`, {
       method: "POST",
@@ -74,5 +74,58 @@ export class LaneSession {
       throw new Error(payload.error ?? `Lane could not apply the action (HTTP ${response.status}).`);
     }
     return { applied: true, action: payload.action ?? "", message: payload.message ?? "Applied." };
+  }
+
+  /** POST one project action (create / update / delete) via the hosted project gateway. */
+  async applyProject(action: unknown): Promise<{ applied: boolean; action: string; projectId?: string; message: string }> {
+    const response = await fetch(`${this.apiUrl}/api/mcp/apply-project`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const text = await response.text();
+    let payload: { applied?: boolean; action?: string; projectId?: string; message?: string; error?: string };
+    try {
+      payload = JSON.parse(text) as typeof payload;
+    } catch {
+      throw new Error(`Lane returned a non-JSON project response (HTTP ${response.status}): ${text.slice(0, 200)}`);
+    }
+    if (!response.ok || !payload.applied) {
+      throw new Error(payload.error ?? `Lane could not apply the project action (HTTP ${response.status}).`);
+    }
+    return { applied: true, action: payload.action ?? "", projectId: payload.projectId, message: payload.message ?? "Applied." };
+  }
+
+  /** Read the current public share status for a project. */
+  async getShareLink(projectId: string): Promise<Record<string, unknown>> {
+    const response = await fetch(`${this.apiUrl}/api/mcp/share-link`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    });
+    const text = await response.text();
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error(`Lane returned a non-JSON share-link response (HTTP ${response.status}): ${text.slice(0, 200)}`);
+    }
+  }
+
+  /** Validate export access and return a browser-openable download URL. */
+  async planExport(body: { projectId: string; format: string; title?: string }): Promise<Record<string, unknown>> {
+    const response = await fetch(`${this.apiUrl}/api/mcp/plan-export`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error(`Lane returned a non-JSON export response (HTTP ${response.status}): ${text.slice(0, 200)}`);
+    }
+    if (!response.ok) throw new Error((payload.error as string | undefined) ?? `Lane could not prepare the export (HTTP ${response.status}).`);
+    return payload;
   }
 }

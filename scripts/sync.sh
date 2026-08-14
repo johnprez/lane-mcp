@@ -13,11 +13,12 @@ APP="${1:-}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LANE="$HERE/src/lane"
 
-cp "$APP/eve-pilot/action-contracts.ts"     "$LANE/action-contracts.ts"   # zod-only, verbatim
-cp "$APP/src/lib/ai/lane-context.ts"         "$LANE/lane-context.ts"
-cp "$APP/src/lib/mcp/workspaces.ts"          "$LANE/workspaces.ts"
-cp "$APP/src/lib/mcp/format.ts"              "$LANE/format.ts"
-cp "$APP/src/lib/supabase/database.types.ts" "$LANE/database.types.ts"     # type-only; stripped at build
+cp "$APP/eve-pilot/action-contracts.ts"         "$LANE/action-contracts.ts"           # zod-only, verbatim
+cp "$APP/eve-pilot/project-action-contracts.ts" "$LANE/project-action-contracts.ts"   # project CRUD + export schemas
+cp "$APP/src/lib/ai/lane-context.ts"            "$LANE/lane-context.ts"
+cp "$APP/src/lib/mcp/workspaces.ts"             "$LANE/workspaces.ts"
+cp "$APP/src/lib/mcp/format.ts"                 "$LANE/format.ts"
+cp "$APP/src/lib/supabase/database.types.ts"    "$LANE/database.types.ts"              # type-only; stripped at build
 
 # Only rewrite import PATHS so the group is self-contained — no logic/type surgery.
 sed -i '' 's#\.\./supabase/database\.types#./database.types#' "$LANE/lane-context.ts"

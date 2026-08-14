@@ -288,24 +288,27 @@ export function laneContextClient(accessToken: string): LaneContextClient {
 }
 
 /**
- * Read the authenticated user's Lane plan graph. Passing `projectId` narrows the
- * read to that one project; omitting it widens to the workspace (bounded).
+ * Read the authenticated user's Lane plan graph. Pass `projectIds` (array) to
+ * narrow to specific projects; pass the legacy `projectId` for a single project;
+ * omit both to widen to the workspace (bounded to 12 most-recently updated).
  *
- * The base read stays lean (activities, tasks, milestones, people, etc.).
- * Heavier/peripheral sections — time off, deliverables, links — are pulled ONLY
- * when named in `include`, so Eve fetches them on demand when a question calls
- * for them rather than paying for them on every turn.
+ * The base read stays lean. Pull extra sections on demand via `include`.
  */
-export async function getLaneContext(params: { accessToken: string; projectId?: string; include?: readonly LaneContextSection[] }): Promise<LaneContext> {
-  const { accessToken, projectId } = params;
+export async function getLaneContext(params: { accessToken: string; projectId?: string; projectIds?: string[]; include?: readonly LaneContextSection[] }): Promise<LaneContext> {
+  const { accessToken } = params;
+  // Normalise: projectIds wins; fall back to singular projectId; null = workspace scan
+  const scopedIds: string[] | null =
+    params.projectIds && params.projectIds.length > 0 ? params.projectIds
+    : params.projectId ? [params.projectId]
+    : null;
   const want = new Set(params.include ?? []);
   const db = laneContextClient(accessToken);
-  const projects = await db.from("projects")
+  const projectsQuery = db.from("projects")
     .select("id, workspace_id, project_key, name, description, status, health, priority, owner_id, starts_on, due_on, version, updated_at")
     .is("archived_at", null)
     .order("updated_at", { ascending: false })
-    .limit(projectId ? 1 : 12)
-    .match(projectId ? { id: projectId } : {});
+    .limit(scopedIds ? scopedIds.length : 12);
+  const projects = await (scopedIds ? projectsQuery.in("id", scopedIds) : projectsQuery);
   if (projects.error) {
     logContextFailure("projects", projects.error);
     throw new Error("Lane could not read the authorized project context.");
@@ -404,8 +407,9 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   // Brand-aware report guidance for a single focused project. Additive + tolerant
   // of the (out-of-band) profile columns not being deployed yet.
   let brand: LaneContextBrand | null = null;
-  if (projectId) {
-    const brandResult = await db.from("project_brand_profiles").select("guidelines_md, export_design_md").eq("project_id", projectId).maybeSingle();
+  const singleProjectId = scopedIds?.length === 1 ? scopedIds[0] : undefined;
+  if (singleProjectId) {
+    const brandResult = await db.from("project_brand_profiles").select("guidelines_md, export_design_md").eq("project_id", singleProjectId).maybeSingle();
     const guidelinesMarkdown = brandResult.data?.guidelines_md ?? "";
     const exportDesignMarkdown = brandResult.data?.export_design_md ?? "";
     if (!brandResult.error && (guidelinesMarkdown.trim() || exportDesignMarkdown.trim())) {

@@ -5,6 +5,7 @@ import { getLaneContext } from "./lane/lane-context.js";
 import { listLaneWorkspaces } from "./lane/workspaces.js";
 import { describeAction, summarizeContextMarkdown, workspacesMarkdown } from "./lane/format.js";
 import { LaneAgentActionSchema } from "./lane/action-contracts.js";
+import { LaneProjectActionSchema } from "./lane/project-action-contracts.js";
 import type { LaneSession } from "./session.js";
 import { WORKSPACES_APP_HTML } from "./generated/workspaces-app.js";
 import { APPROVAL_APP_HTML } from "./generated/approval-app.js";
@@ -133,13 +134,15 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         "Read the current Lane plan graph for you (projects, lanes, phases, milestones, activities, tasks, events, people, roles, groups, assignments, notes, dependencies). Pass a projectId to focus on one project, or omit it to read across the active workspace. Returns a chat summary plus the full structured graph — use the structured data to build tables, timelines, or other visual artifacts.",
       inputSchema: z.object({
         projectId: z.string().uuid().optional().describe("Focus the read on one project. Omit to read the whole active workspace."),
+        projectIds: z.array(z.string().uuid()).min(1).max(20).optional().describe("Focus on multiple specific projects (e.g. canvas multi-select). Wins over projectId when both are provided."),
+        include: z.array(z.enum(["timeOff", "deliverables", "links"])).optional().describe("Pull extra data sections on demand: 'timeOff' for availability/PTO, 'deliverables' for handoffs, 'links' for attached resources. Omit when not needed."),
       }),
       annotations: { readOnlyHint: true },
       _meta: { ui: { resourceUri: DASHBOARD_APP_URI } },
     },
-    async ({ projectId }) => {
+    async ({ projectId, projectIds, include }) => {
       const token = await session.accessToken();
-      const context = await getLaneContext({ accessToken: token, projectId });
+      const context = await getLaneContext({ accessToken: token, projectId, projectIds, include });
       return {
         content: [
           { type: "text", text: summarizeContextMarkdown(context) },
@@ -287,5 +290,81 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
       content: [{ type: "text", text: "Opening the tasks board." }],
       structuredContent: { projectId },
     }),
+  );
+
+  server.registerTool(
+    "lane_apply_project_action",
+    {
+      title: "Create, update, or delete a Lane project",
+      description:
+        "Create a new Lane project, update an existing one (name, key, description, status, health, priority, dates), or permanently delete one. Read lane_get_context first to confirm the projectId and expectedVersion for edits and deletes. Pass the full action object. Set preview:true to validate without applying — do this first for destructive changes, then re-call with preview:false to apply. Never claim a change happened until this returns applied:true.",
+      inputSchema: z.object({
+        action: LaneProjectActionSchema.describe("The exact project mutation (discriminated union keyed by 'action': project.create | project.update | project.delete)."),
+        preview: z.boolean().optional().describe("When true, describe the change without applying it."),
+      }),
+      annotations: { destructiveHint: true },
+      _meta: { ui: { resourceUri: APPROVAL_APP_URI } },
+    },
+    async ({ action, preview }) => {
+      if (preview) {
+        const describe = describeAction(action as Record<string, unknown>);
+        const message = `Preview only — nothing applied. This would run:\n\n${describe}\n\nRe-call with \`preview: false\` to apply.`;
+        return {
+          content: [{ type: "text", text: message }],
+          structuredContent: { applied: false, preview: true, action: action.action, message: "Preview only; nothing was applied.", describe },
+        };
+      }
+      const result = await session.applyProject(action);
+      return {
+        content: [{ type: "text", text: `✓ Applied \`${result.action}\`. ${result.message}` }],
+        structuredContent: { applied: true, action: result.action, projectId: result.projectId, message: result.message },
+      };
+    },
+  );
+
+  server.registerTool(
+    "lane_get_project_share_link",
+    {
+      title: "Get the share link for a Lane project",
+      description:
+        "Read the current public share status for one project: whether it is shared, the link URL, whether a password is required and what it is, and any expiry date. Use when the user asks about sharing, the share link, or the share password. Pass the exact projectId.",
+      inputSchema: z.object({
+        projectId: z.string().uuid().describe("The project whose share status to read."),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ projectId }) => {
+      const result = await session.getShareLink(projectId);
+      const text = result.active
+        ? `Project is shared.\nURL: ${result.url as string}${result.requiresPassword ? `\nPassword: ${result.password as string}` : ""}${result.expiresAt ? `\nExpires: ${result.expiresAt as string}` : ""}`
+        : (result.message as string | undefined) ?? "Project is not shared publicly.";
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: result,
+      };
+    },
+  );
+
+  server.registerTool(
+    "lane_generate_plan_export",
+    {
+      title: "Get a Lane plan export download link",
+      description:
+        "Return a download link for the current project plan in PDF, PowerPoint, or Excel format. The link must be opened in the user's authenticated browser session to download the file. This is read-only and does not change any project records.",
+      inputSchema: z.object({
+        projectId: z.string().uuid().describe("The project to export."),
+        format: z.enum(["pdf", "pptx", "xlsx"]).describe("Export format."),
+        title: z.string().trim().min(1).max(200).optional().describe("Optional document title (defaults to project name)."),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ projectId, format, title }) => {
+      const result = await session.planExport({ projectId, format, title });
+      const text = `Your plan export is ready.\nFormat: ${result.format as string}\nFile: ${result.fileName as string}\nDownload URL (open in your browser): ${result.downloadUrl as string}`;
+      return {
+        content: [{ type: "text", text }],
+        structuredContent: result,
+      };
+    },
   );
 }
