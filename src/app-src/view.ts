@@ -117,6 +117,62 @@ function renderPortfolio(s: Spec): string {
     <section class="vsec">${ps.length ? ps.map((p) => `<div class="listrow static"><span class="grow"><strong>${esc(str(p.name))}</strong> ${statusPill(str(p.health) || "unknown")}${p.nextMilestoneTitle ? `<span class="sub">Next: ${esc(str(p.nextMilestoneTitle))}${p.nextMilestoneDate ? ` · ${esc(fmtDate(p.nextMilestoneDate))}` : ""}</span>` : ""}</span><span class="metaend">${num(p.blocked) ? `<span class="st st-blocked">${num(p.blocked)} blocked</span>` : ""}${bar(num(p.progress))}</span></div>`).join("") : emptyRow("No projects to roll up.")}</section>`;
 }
 
+const LOAD_LABEL: Record<string, string> = { under: "Has room", balanced: "Balanced", high: "High", over: "Over capacity" };
+function renderWorkload(s: Spec): string {
+  const people = arr(s.people);
+  const scope = str(s.scope) === "workspace" ? "Across the workspace" : `Project · ${str(s.projectName) || "this project"}`;
+  const near = people.filter((p) => str(p.load) === "high" || str(p.load) === "over").length;
+  return `${head("Workload", scope)}
+    <section class="vsec"><p class="vlabel">Capacity <span class="muted">· ${near} near/over · ${people.length - near} have room</span></p>
+    ${people.length ? people.map((p) => {
+      const load = str(p.load);
+      const out = p.outSoon && typeof p.outSoon === "object" ? p.outSoon as Spec : null;
+      const n = num(p.activeCount);
+      return `<div class="listrow static"><span class="grow"><strong>${esc(str(p.name))}</strong>${p.role ? ` <span class="muted">· ${esc(str(p.role))}</span>` : ""}<span class="sub">${n} active${out ? ` · out ${esc(range(out.startsOn, out.endsOn))}` : ""}</span></span><span class="load load-${esc(load)}">${esc(LOAD_LABEL[load] ?? load)}</span></div>`;
+    }).join("") : emptyRow("No team members own open work here.")}</section>`;
+}
+
+function renderAttention(s: Spec): string {
+  const m = (s.metrics && typeof s.metrics === "object" ? s.metrics : {}) as Spec;
+  const first = (list: unknown): string => { const a = arr(list); return a.length ? str(a[0].title) : ""; };
+  const worst = (list: unknown): string => { const a = arr(list); const d = a.length ? num(a[0].daysOverdue) : 0; return d > 0 ? `worst ${d}d` : ""; };
+  const rows: string[] = [];
+  const row = (dot: string, n: number, label: string, detail: string) => { if (n > 0) rows.push(`<div class="listrow static"><span class="grow"><span class="adot ${dot}"></span><strong>${n}</strong> ${esc(label)}${detail ? `<span class="sub">${esc(detail)}</span>` : ""}</span></div>`); };
+  row("dot-red", arr(m.blockedItems).length, "blocked", first(m.blockedItems));
+  row("dot-red", arr(m.overdueMilestones).length, "overdue milestones", worst(m.overdueMilestones) || first(m.overdueMilestones));
+  row("dot-amber", arr(m.scheduleSlips).length, "behind schedule", worst(m.scheduleSlips) || first(m.scheduleSlips));
+  row("dot-iris", arr(m.unassignedItems).length, "unassigned", "");
+  row("dot-iris", arr(m.unscheduledItems).length, "unscheduled", "");
+  return `${head("Needs attention", str(s.projectName))}
+    <section class="vhero attn-hero"><span class="attn-score">${num(m.atRiskScore)}</span><span class="tlabel">At-risk score</span></section>
+    <section class="vsec">${rows.length ? rows.join("") : emptyRow("Nothing needs attention — the route is clear.")}</section>`;
+}
+
+function agoTime(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (isNaN(t)) return "";
+  const m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.round(h / 24);
+  return d < 30 ? `${d}d` : fmtDate(iso.slice(0, 10));
+}
+const LOG_VERB: Record<string, string> = { created: "created", updated: "updated", deleted: "deleted", archived: "archived", restored: "restored", insert: "added", update: "updated", delete: "removed", invited: "invited", joined: "joined", role_changed: "changed the role of" };
+const LOG_NOUN: Record<string, string> = { work_item: "activity", task: "task", milestone: "milestone", deliverable: "deliverable", lane: "lane", phase: "phase", event: "event", plan_dependency: "dependency", work_item_dependency: "dependency", work_item_note: "note", milestone_note: "note", event_note: "note", deliverable_note: "note", person: "person", role: "role", group: "group", pto: "time off", project_access: "project access", workspace_membership: "membership", workspace_invitation: "invitation" };
+function renderActivityLog(s: Spec): string {
+  const entries = arr(s.entries);
+  return `${head("Recent activity", str(s.projectName))}
+    <section class="vsec">${entries.length ? entries.map((e) => {
+      const verb = LOG_VERB[str(e.action)] ?? str(e.action).replace(/_/g, " ");
+      const noun = LOG_NOUN[str(e.entityType)] ?? str(e.entityType).replace(/_/g, " ");
+      const label = str(e.label) ? ` “${esc(str(e.label))}”` : "";
+      const initials = str(e.actorName).split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+      return `<div class="listrow static logrow"><span class="avstack"><i>${esc(initials || "?")}</i></span><span class="grow"><span><strong>${esc(str(e.actorName))}</strong> ${esc(verb)} ${esc(noun)}${label}</span></span><span class="muted nowrap">${esc(agoTime(str(e.createdAt)))}</span></div>`;
+    }).join("") : emptyRow("No activity recorded yet.")}</section>`;
+}
+
 function renderCallout(s: Spec): string {
   const tone = str(s.tone) || "info";
   return `<div class="card vcallout tone-${esc(tone)}">${badge("Lane")}<h2>${esc(str(s.title))}</h2><p class="muted">${esc(str(s.body))}</p></div>`;
@@ -133,6 +189,9 @@ function render(spec: Spec | null): void {
     case "activities": body = renderActivities(spec); break;
     case "project_overview": body = renderOverview(spec); break;
     case "project_signals": body = renderSignals(spec); break;
+    case "workload": body = renderWorkload(spec); break;
+    case "attention": body = renderAttention(spec); break;
+    case "activity_log": body = renderActivityLog(spec); break;
     case "portfolio_health": body = renderPortfolio(spec); break;
     case "callout": root.innerHTML = renderCallout(spec); return;
     default: body = `${head("View")}${emptyRow(`Unsupported view: ${view || "unknown"}.`)}`;
@@ -170,6 +229,15 @@ style.textContent = `
   .tlabel { font-size:10.5px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
   .vempty { padding:6px 0; }
   .tprog { display:inline-block; width:64px; }
+  .load { flex:none; padding:3px 10px; border-radius:999px; font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--muted); background:var(--subtle); }
+  .load-high { color:var(--amber); background:color-mix(in srgb,var(--amber) 15%,transparent); }
+  .load-over { color:var(--red); background:color-mix(in srgb,var(--red) 15%,transparent); }
+  .load-under { color:var(--jade); background:color-mix(in srgb,var(--jade) 14%,transparent); }
+  .adot { display:inline-block; width:8px; height:8px; margin-right:8px; border-radius:50%; vertical-align:middle; background:var(--muted); }
+  .adot.dot-red { background:var(--red); } .adot.dot-amber { background:var(--amber); } .adot.dot-iris { background:var(--purple); }
+  .attn-hero { display:flex; align-items:center; gap:12px; }
+  .attn-score { font-size:30px; font-weight:640; letter-spacing:-.04em; color:var(--purple); }
+  .logrow { align-items:center; }
 `;
 document.head.appendChild(style);
 
