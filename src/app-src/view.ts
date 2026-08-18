@@ -173,6 +173,17 @@ function renderActivityLog(s: Spec): string {
     }).join("") : emptyRow("No activity recorded yet.")}</section>`;
 }
 
+function renderRisksDecisions(s: Spec): string {
+  const risks = arr(s.risks), decisions = arr(s.decisions);
+  const riskTone = (score: number): string => (score >= 15 ? "load-over" : score >= 8 ? "load-high" : "");
+  const risksSec = `<section class="vsec"><p class="vlabel">Risks <span class="muted">· ${risks.length}</span></p>${risks.length ? risks.map((r) => {
+    const score = num(r.score);
+    return `<div class="listrow static"><span class="grow"><strong>${esc(str(r.title))}</strong> ${statusPill(str(r.status))}<span class="sub">L${num(r.likelihood)} × I${num(r.impact)}${r.dueOn ? ` · due ${esc(fmtDate(r.dueOn))}` : ""}</span></span><span class="load ${riskTone(score)}" title="likelihood × impact">${score}</span></div>`;
+  }).join("") : emptyRow("No risks logged.")}</section>`;
+  const decSec = `<section class="vsec"><p class="vlabel">Decisions <span class="muted">· ${decisions.length}</span></p>${decisions.length ? decisions.map((d) => `<div class="listrow static"><span class="grow"><strong>${esc(str(d.title))}</strong> ${statusPill(str(d.status))}</span><span class="muted nowrap">${d.decidedAt ? esc(fmtDate(d.decidedAt)) : ""}</span></div>`).join("") : emptyRow("No decisions logged.")}</section>`;
+  return `${head("Risks & decisions", str(s.projectName))}${risksSec}${decSec}`;
+}
+
 function renderTimeline(s: Spec): string {
   const start = str(s.start), end = str(s.end), today = str(s.today);
   const t0 = Date.parse(`${start}T00:00:00Z`);
@@ -238,6 +249,7 @@ function render(spec: Spec | null): void {
     case "attention": body = renderAttention(spec); break;
     case "activity_log": body = renderActivityLog(spec); break;
     case "timeline": body = renderTimeline(spec); break;
+    case "risks_decisions": body = renderRisksDecisions(spec); break;
     case "portfolio_health": body = renderPortfolio(spec); break;
     case "callout": root.innerHTML = renderCallout(spec); return;
     default: body = `${head("View")}${emptyRow(`Unsupported view: ${view || "unknown"}.`)}`;
