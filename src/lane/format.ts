@@ -113,6 +113,14 @@ export function describeAction(action: Record<string, unknown>): string {
     if (action.createMissingActivities) lines.push(`- **create missing activities**: yes${action.laneId ? ` (lane ${str(action.laneId)})` : ""}`);
     return lines.join("\n");
   }
+  // Bulk connect: render the edge count, not the full predecessor/successor list.
+  if (kind === "dependency.bulkCreate") {
+    const edges = Array.isArray(action.edges) ? action.edges as Array<Record<string, unknown>> : [];
+    const lagged = edges.filter((edge) => Number(edge.lagDays) !== 0).length;
+    const lines = [`\`dependency.bulkCreate\``, `- **connections**: ${edges.length}`];
+    if (lagged > 0) lines.push(`- **with lag**: ${lagged}`);
+    return lines.join("\n");
+  }
   const skip = new Set(["action"]);
   const fields = Object.entries(action)
     .filter(([key, value]) => !skip.has(key) && value !== null && value !== undefined && !(Array.isArray(value) && value.length === 0) && value !== "")

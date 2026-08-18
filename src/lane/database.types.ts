@@ -42,8 +42,20 @@ export type Database = {
         { id: string; full_name?: string; avatar_url?: string | null; timezone?: string; active_workspace_id?: string | null; created_at?: string; updated_at?: string }
       >;
       workspaces: TableDefinition<
-        Timestamped & { id: string; name: string; slug: string; created_by: string; archived_at: string | null },
-        { id?: string; name: string; slug: string; created_by: string; created_at?: string; updated_at?: string; archived_at?: string | null }
+        Timestamped & { id: string; name: string; slug: string; created_by: string; account_id: string | null; archived_at: string | null },
+        { id?: string; name: string; slug: string; created_by: string; account_id?: string | null; created_at?: string; updated_at?: string; archived_at?: string | null }
+      >;
+      accounts: TableDefinition<
+        Timestamped & { id: string; owner_user_id: string; name: string },
+        { id?: string; owner_user_id: string; name?: string; created_at?: string; updated_at?: string }
+      >;
+      account_people: TableDefinition<
+        Timestamped & { id: string; account_id: string; full_name: string; email: string; level: string | null; default_allocation_percent: number; notes: string; availability_note: string; version: number; created_by: string; archived_at: string | null },
+        { id?: string; account_id: string; full_name: string; email: string; level?: string | null; default_allocation_percent?: number; notes?: string; availability_note?: string; version?: number; created_by: string; created_at?: string; updated_at?: string; archived_at?: string | null }
+      >;
+      account_person_time_off: TableDefinition<
+        Timestamped & { id: string; account_id: string; account_person_id: string; starts_on: string; ends_on: string; note: string; version: number; created_by: string; archived_at: string | null },
+        { id?: string; account_id: string; account_person_id: string; starts_on: string; ends_on: string; note?: string; version?: number; created_by: string; created_at?: string; updated_at?: string; archived_at?: string | null }
       >;
       workspace_memberships: TableDefinition<
         Timestamped & {
@@ -70,9 +82,11 @@ export type Database = {
       workspace_admin_settings: TableDefinition<
         Timestamped & {
           workspace_id: string; response_profile_enabled: boolean; member_limit: number | null;
+          ask_lane_attachment_max_bytes: number | null; ask_lane_attachment_max_count: number | null;
         },
         {
           workspace_id: string; response_profile_enabled?: boolean; member_limit?: number | null;
+          ask_lane_attachment_max_bytes?: number | null; ask_lane_attachment_max_count?: number | null;
           created_at?: string; updated_at?: string;
         }
       >;
@@ -83,12 +97,12 @@ export type Database = {
       projects: TableDefinition<
         Timestamped & {
           id: string; workspace_id: string; project_key: string; name: string; description: string;
-          status: ProjectStatus; health: HealthStatus; priority: PriorityLevel; owner_id: string | null;
+          status: ProjectStatus; health: HealthStatus; health_source: "auto" | "manual"; priority: PriorityLevel; owner_id: string | null;
           starts_on: string | null; due_on: string | null; version: number; created_by: string; archived_at: string | null;
         },
         {
           id?: string; workspace_id: string; project_key: string; name: string; description?: string;
-          status?: ProjectStatus; health?: HealthStatus; priority?: PriorityLevel; owner_id?: string | null;
+          status?: ProjectStatus; health?: HealthStatus; health_source?: "auto" | "manual"; priority?: PriorityLevel; owner_id?: string | null;
           starts_on?: string | null; due_on?: string | null; version?: number; created_by: string; created_at?: string;
           updated_at?: string; archived_at?: string | null;
         }
@@ -300,12 +314,24 @@ export type Database = {
         {
           id: string; workspace_id: string; user_id: string; ai_run_id: string;
           briefing_date: string; generated_at: string; snapshot_version: string;
-          latest_record_updated_at: string; model: string; artifact: Json; created_at: string;
+          latest_record_updated_at: string; model: string; artifact: Json; citation_links: Json; created_at: string;
         },
         {
           id?: string; workspace_id: string; user_id: string; ai_run_id: string;
           briefing_date: string; generated_at?: string; snapshot_version: string;
-          latest_record_updated_at: string; model: string; artifact: Json; created_at?: string;
+          latest_record_updated_at: string; model: string; artifact: Json; citation_links?: Json; created_at?: string;
+        }
+      >;
+      access_set_briefings: TableDefinition<
+        {
+          id: string; workspace_id: string; project_set_key: string; project_ids: string[];
+          ai_run_id: string | null; briefing_date: string; generated_at: string; snapshot_version: string;
+          latest_record_updated_at: string; model: string; artifact: Json; citation_links: Json; created_at: string;
+        },
+        {
+          id?: string; workspace_id: string; project_set_key: string; project_ids: string[];
+          ai_run_id?: string | null; briefing_date: string; generated_at?: string; snapshot_version: string;
+          latest_record_updated_at: string; model: string; artifact: Json; citation_links?: Json; created_at?: string;
         }
       >;
       workspace_role_catalog: TableDefinition<
@@ -313,8 +339,8 @@ export type Database = {
         { id?: string; workspace_id: string; name: string; description?: string; color?: string; sort_key?: string; version?: number; created_by: string; created_at?: string; updated_at?: string; archived_at?: string | null }
       >;
       workspace_people: TableDefinition<
-        Timestamped & { id: string; workspace_id: string; full_name: string; email: string | null; person_kind: "team_member" | "client"; role_title: string; organization_name: string; default_allocation_percent: number; level: string | null; notes: string; availability_note: string; version: number; created_by: string; archived_at: string | null },
-        { id?: string; workspace_id: string; full_name: string; email?: string | null; person_kind?: "team_member" | "client"; role_title?: string; organization_name?: string; default_allocation_percent?: number; level?: string | null; notes?: string; availability_note?: string; version?: number; created_by: string; created_at?: string; updated_at?: string; archived_at?: string | null }
+        Timestamped & { id: string; workspace_id: string; full_name: string; email: string | null; person_kind: "team_member" | "client"; role_title: string; organization_name: string; default_allocation_percent: number; level: string | null; notes: string; availability_note: string; account_person_id: string | null; version: number; created_by: string; archived_at: string | null },
+        { id?: string; workspace_id: string; full_name: string; email?: string | null; person_kind?: "team_member" | "client"; role_title?: string; organization_name?: string; default_allocation_percent?: number; level?: string | null; notes?: string; availability_note?: string; account_person_id?: string | null; version?: number; created_by: string; created_at?: string; updated_at?: string; archived_at?: string | null }
       >;
       workspace_person_roles: TableDefinition<
         { workspace_id: string; person_id: string; role_id: string; is_primary: boolean; created_by: string; created_at: string },
@@ -519,6 +545,7 @@ export type Database = {
           p_workspace_id: string; p_run_id: string; p_output: Json;
           p_input_tokens: number | null; p_output_tokens: number | null;
           p_snapshot_version: string; p_latest_record_updated_at: string; p_model: string;
+          p_citation_links?: Json;
         };
         Returns: string;
       };
@@ -526,6 +553,32 @@ export type Database = {
       set_active_workspace: { Args: { p_workspace_id: string | null }; Returns: boolean };
       create_workspace_invitation: { Args: { p_workspace_id: string; p_email: string; p_role: WorkspaceRole; p_project_grants?: Json }; Returns: string };
       my_project_access: { Args: { p_project_id: string }; Returns: string };
+      list_project_activity: {
+        Args: {
+          p_project_id: string;
+          p_search?: string | null;
+          p_category?: string | null;
+          p_actor?: string | null;
+          p_from?: string | null;
+          p_to?: string | null;
+          p_limit?: number | null;
+          p_before_created?: string | null;
+          p_before_id?: number | null;
+        };
+        Returns: {
+          id: number;
+          created_at: string;
+          actor_user_id: string | null;
+          actor_name: string;
+          actor_email: string | null;
+          entity_type: string;
+          entity_id: string | null;
+          action: string;
+          category: string;
+          metadata: Json;
+        }[];
+      };
+      accessible_project_ids_for_user: { Args: { p_user_id: string; p_workspace_id: string }; Returns: string[] };
       set_project_access: { Args: { p_workspace_id: string; p_project_id: string; p_user_id: string; p_level: ProjectAccessLevel }; Returns: boolean };
       remove_project_access: { Args: { p_workspace_id: string; p_project_id: string; p_user_id: string }; Returns: boolean };
       list_project_access: {
@@ -546,7 +599,7 @@ export type Database = {
       };
       accept_pending_invitations: { Args: Record<PropertyKey, never>; Returns: number };
       transfer_workspace_owner: { Args: { p_workspace_id: string; p_new_owner_user_id: string }; Returns: boolean };
-      set_workspace_admin_settings: { Args: { p_workspace_id: string; p_response_profile_enabled: boolean; p_member_limit: number | null }; Returns: boolean };
+      set_workspace_admin_settings: { Args: { p_workspace_id: string; p_response_profile_enabled: boolean; p_member_limit: number | null; p_ask_lane_attachment_max_bytes?: number | null; p_ask_lane_attachment_max_count?: number | null }; Returns: boolean };
       set_workflow_model: { Args: { p_workflow_id: string; p_model: string | null; p_reasoning: string | null }; Returns: boolean };
       current_user_is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       end_platform_elevation: { Args: { p_workspace_id: string }; Returns: boolean };
@@ -736,6 +789,7 @@ export type Database = {
         Returns: Json;
       };
       upsert_workspace_team_group: { Args: { p_workspace_id: string; p_project_id: string; p_group_id: string | null; p_expected_version: number | null; p_name: string; p_description: string; p_color: string; p_person_ids: string[] }; Returns: string };
+      archive_workspace_team_group: { Args: { p_workspace_id: string; p_project_id: string; p_group_id: string; p_expected_version: number }; Returns: string };
       upsert_project_brand_profile: { Args: { p_workspace_id: string; p_project_id: string; p_expected_version: number | null; p_tokens: Json; p_guidelines_md: string; p_use_for_exports: boolean; p_use_for_plan: boolean; p_source_asset_id: string | null; p_logo_data_url: string | null }; Returns: Json };
       set_project_export_design: { Args: { p_workspace_id: string; p_project_id: string; p_export_design_md: string }; Returns: Json };
       start_brand_analysis_run: { Args: { p_workspace_id: string; p_project_id: string; p_model: string; p_input_refs: Json }; Returns: string };
@@ -745,6 +799,7 @@ export type Database = {
       update_work_item_plan_with_owners: { Args: { p_workspace_id: string; p_project_id: string; p_work_item_id: string; p_expected_version: number; p_title: string; p_description: string; p_status: Database["public"]["Enums"]["work_item_status"]; p_priority: Database["public"]["Enums"]["priority_level"]; p_workstream_id: string | null; p_milestone_id: string | null; p_starts_at: string | null; p_due_at: string | null; p_progress: number; p_color: string | null; p_lane_color_shade: number; p_person_ids: string[]; p_group_ids: string[] }; Returns: Json };
       bulk_update_work_items: { Args: { p_workspace_id: string; p_project_id: string; p_ids: string[]; p_set: Json }; Returns: Json };
       bulk_create_work_item_checklist_items: { Args: { p_workspace_id: string; p_project_id: string; p_lane_id: string | null; p_create_missing: boolean; p_tasks: Json }; Returns: Json };
+      bulk_create_work_item_dependencies: { Args: { p_workspace_id: string; p_project_id: string; p_edges: Json }; Returns: Json };
       save_brand_template: { Args: { p_workspace_id: string; p_template_id: string | null; p_expected_version: number | null; p_name: string; p_description: string; p_tokens: Json; p_guidelines_md: string; p_export_design_md: string; p_logo_data_url: string | null }; Returns: Json };
       delete_brand_template: { Args: { p_workspace_id: string; p_template_id: string; p_expected_version: number }; Returns: Json };
       archive_project_planning_event: { Args: { p_workspace_id: string; p_id: string; p_expected_version: number }; Returns: Json };
@@ -797,6 +852,11 @@ export type Database = {
       upsert_project_planning_event: { Args: { p_workspace_id: string; p_project_id: string; p_event_id: string | null; p_expected_version: number | null; p_title: string; p_description: string; p_starts_at: string; p_ends_at: string | null; p_all_day: boolean; p_timezone: string; p_color: string; p_workstream_ids: string[]; p_person_ids: string[]; p_group_ids: string[] }; Returns: Json };
       upsert_person_time_off: { Args: { p_workspace_id: string; p_person_id: string; p_id: string | null; p_expected_version: number | null; p_starts_on: string; p_ends_on: string; p_note: string }; Returns: Json };
       delete_person_time_off: { Args: { p_workspace_id: string; p_id: string; p_expected_version: number }; Returns: Json };
+      upsert_account_person: { Args: { p_account_id: string; p_id: string | null; p_expected_version: number | null; p_full_name: string; p_email: string | null; p_level: string | null; p_allocation: number; p_notes: string; p_availability_note: string }; Returns: Json };
+      archive_account_person: { Args: { p_account_id: string; p_id: string; p_expected_version: number }; Returns: Json };
+      record_eve_run: { Args: { p_model: string; p_input_tokens: number; p_output_tokens: number; p_turn_ref?: string | null }; Returns: string };
+      upsert_account_person_time_off: { Args: { p_account_id: string; p_account_person_id: string; p_id: string | null; p_expected_version: number | null; p_starts_on: string; p_ends_on: string; p_note: string }; Returns: Json };
+      delete_account_person_time_off: { Args: { p_account_id: string; p_id: string; p_expected_version: number }; Returns: Json };
     };
     Enums: {
       workspace_role: WorkspaceRole;

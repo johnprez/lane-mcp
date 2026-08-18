@@ -34,7 +34,7 @@ export const LaneProjectActionSchema = z.discriminatedUnion("action", [
 
 export const LanePlanExportRequestSchema = z.object({
   projectId: Id,
-  format: z.enum(["pdf", "pptx", "xls", "xlsx"]),
+  format: z.enum(["pdf", "pptx", "xls", "xlsx", "html"]),
   title: z.string().trim().min(1).max(200).default("Project plan"),
   includeGantt: z.literal(true).default(true),
   useProjectBrandAssets: z.boolean().default(true),

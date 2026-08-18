@@ -82,8 +82,33 @@ export const LaneAgentActionSchema = z.discriminatedUnion("action", [
   Base.extend({ action: z.literal("dependency.create"), predecessorId: Id, successorId: Id, lagDays: z.number().int().min(-365).max(365).default(0) }),
   Base.extend({ action: z.literal("dependency.update"), predecessorId: Id, successorId: Id, expectedVersion: z.number().int().positive(), lagDays: z.number().int().min(-365).max(365) }),
   Base.extend({ action: z.literal("dependency.delete"), predecessorId: Id, successorId: Id, expectedVersion: z.number().int().positive() }),
+  // Connect many activities in ONE approval — the intelligent path for wiring up
+  // a plan's dependencies from reasoning over the schedule. Each edge is a
+  // predecessor→successor pair with optional lag. The server relies on the
+  // cycle/self-reference guard already on the table: edges that would form a
+  // cycle, duplicate an existing link, self-reference, or point at a missing
+  // activity are skipped and reported under `skipped` — the rest are created.
+  Base.extend({
+    action: z.literal("dependency.bulkCreate"),
+    edges: z.array(z.object({
+      predecessorId: Id,
+      successorId: Id,
+      lagDays: z.number().int().min(-365).max(365).default(0),
+    }).refine((edge) => edge.predecessorId !== edge.successorId, {
+      message: "An activity can't depend on itself.",
+    })).min(1).max(500),
+  }),
   Base.extend({ action: z.literal("planDependency.create"), predecessorType: z.enum(["work_item", "deliverable"]), predecessorId: Id, successorType: z.enum(["work_item", "deliverable"]), successorId: Id, lagDays: z.number().int().min(-365).max(365).default(0) }),
   Base.extend({ action: z.literal("planDependency.delete"), dependencyId: Id, expectedVersion: z.number().int().positive() }),
+  // Risks & decisions are RLS-direct (editor writes; no version column, so no
+  // expectedVersion — last write wins). A decision with status "decided" needs a
+  // non-empty `decision`; the server stamps decided_at.
+  Base.extend({ action: z.literal("risk.create"), title: z.string().trim().min(1).max(240), description: z.string().max(8_000).default(""), mitigation: z.string().max(8_000).default(""), status: z.enum(["open", "mitigating", "accepted", "resolved", "closed"]).default("open"), likelihood: z.number().int().min(1).max(5).default(3), impact: z.number().int().min(1).max(5).default(3), dueDate: DateOnly.nullable().default(null) }),
+  Base.extend({ action: z.literal("risk.update"), riskId: Id, title: z.string().trim().min(1).max(240), description: z.string().max(8_000).default(""), mitigation: z.string().max(8_000).default(""), status: z.enum(["open", "mitigating", "accepted", "resolved", "closed"]), likelihood: z.number().int().min(1).max(5), impact: z.number().int().min(1).max(5), dueDate: DateOnly.nullable() }),
+  Base.extend({ action: z.literal("risk.delete"), riskId: Id }),
+  Base.extend({ action: z.literal("decision.create"), title: z.string().trim().min(1).max(240), context: z.string().max(8_000).default(""), decision: z.string().max(8_000).default(""), status: z.enum(["proposed", "decided"]).default("proposed") }),
+  Base.extend({ action: z.literal("decision.update"), decisionId: Id, title: z.string().trim().min(1).max(240), context: z.string().max(8_000).default(""), decision: z.string().max(8_000).default(""), status: z.enum(["proposed", "decided"]) }),
+  Base.extend({ action: z.literal("decision.delete"), decisionId: Id }),
   WorkspaceBase.extend({ action: z.literal("person.create"), personKind: z.enum(["team_member", "client"]), fullName: z.string().trim().min(1).max(120), email: OptionalEmail, roleTitle: z.string().trim().max(160).default(""), organizationName: z.string().trim().max(200).default(""), level: z.enum(["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10", "L11", "L12"]).nullable().default(null), allocation: z.number().int().min(0).max(100).default(100), availabilityNote: z.string().trim().max(1_000).default(""), notes: z.string().trim().max(8_000).default(""), roleIds: z.array(Id).max(12).default([]), primaryRoleId: Id.nullable().default(null), newRoleName: z.string().trim().max(120).default("") }),
   WorkspaceBase.extend({ action: z.literal("person.update"), personId: Id, expectedVersion: z.number().int().positive(), personKind: z.enum(["team_member", "client"]), fullName: z.string().trim().min(1).max(120), email: OptionalEmail, roleTitle: z.string().trim().max(160).default(""), organizationName: z.string().trim().max(200).default(""), level: z.enum(["L1", "L2", "L3", "L4", "L5", "L6", "L7", "L8", "L9", "L10", "L11", "L12"]).nullable().default(null), allocation: z.number().int().min(0).max(100).default(100), availabilityNote: z.string().trim().max(1_000).default(""), notes: z.string().trim().max(8_000).default(""), roleIds: z.array(Id).max(12).default([]), primaryRoleId: Id.nullable().default(null), newRoleName: z.string().trim().max(120).default("") }),
   WorkspaceBase.extend({ action: z.literal("person.archive"), personId: Id, expectedVersion: z.number().int().positive() }),

@@ -288,13 +288,26 @@ export function laneContextClient(accessToken: string): LaneContextClient {
 }
 
 /**
+ * The caller's active workspace, used to scope a portfolio scan when the caller
+ * didn't pass an explicit workspaceId. RLS-scoped to the token, so it can only
+ * ever return the signed-in user's own selection.
+ */
+async function resolveActiveWorkspaceId(db: LaneContextClient): Promise<string | null> {
+  const { data: { user } } = await db.auth.getUser();
+  if (!user) return null;
+  const profile = await db.from("profiles").select("active_workspace_id").eq("id", user.id).maybeSingle();
+  return (profile.data?.active_workspace_id as string | null | undefined) ?? null;
+}
+
+/**
  * Read the authenticated user's Lane plan graph. Pass `projectIds` (array) to
  * narrow to specific projects; pass the legacy `projectId` for a single project;
- * omit both to widen to the workspace (bounded to 12 most-recently updated).
+ * omit both to widen to the workspace. A bare workspace scan is scoped to the
+ * caller's active workspace (or an explicit `workspaceId`) and bounded to 40.
  *
  * The base read stays lean. Pull extra sections on demand via `include`.
  */
-export async function getLaneContext(params: { accessToken: string; projectId?: string; projectIds?: string[]; include?: readonly LaneContextSection[] }): Promise<LaneContext> {
+export async function getLaneContext(params: { accessToken: string; projectId?: string; projectIds?: string[]; workspaceId?: string; include?: readonly LaneContextSection[] }): Promise<LaneContext> {
   const { accessToken } = params;
   // Normalise: projectIds wins; fall back to singular projectId; null = workspace scan
   const scopedIds: string[] | null =
@@ -303,18 +316,38 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     : null;
   const want = new Set(params.include ?? []);
   const db = laneContextClient(accessToken);
-  const projectsQuery = db.from("projects")
+  // Portfolio/workspace scope carries no project ids. Rather than a blind,
+  // cross-workspace "12 most-recently-updated" slice, scope the scan to the
+  // caller's active workspace (matching what the canvas/Now page render). This
+  // keeps the read focused and lets us raise the bound to a realistic portfolio.
+  const scanWorkspaceId = scopedIds ? null : (params.workspaceId ?? await resolveActiveWorkspaceId(db));
+  let projectsQuery = db.from("projects")
     .select("id, workspace_id, project_key, name, description, status, health, priority, owner_id, starts_on, due_on, version, updated_at")
     .is("archived_at", null)
     .order("updated_at", { ascending: false })
-    .limit(scopedIds ? scopedIds.length : 12);
-  const projects = await (scopedIds ? projectsQuery.in("id", scopedIds) : projectsQuery);
+    .limit(scopedIds ? scopedIds.length : 40);
+  if (scopedIds) projectsQuery = projectsQuery.in("id", scopedIds);
+  else if (scanWorkspaceId) projectsQuery = projectsQuery.eq("workspace_id", scanWorkspaceId);
+  const projects = await projectsQuery;
   if (projects.error) {
     logContextFailure("projects", projects.error);
     throw new Error("Lane could not read the authorized project context.");
   }
   const projectIds = (projects.data ?? []).map((project) => project.id);
-  if (!projectIds.length) return { ...EMPTY_CONTEXT };
+  if (!projectIds.length) {
+    // A workspace scan that finds nothing is almost always an identity problem
+    // (the read is running as anon / the wrong user), not an empty workspace —
+    // log the resolved caller so the next repro is diagnosable at a glance.
+    if (!scopedIds) {
+      const who = await db.auth.getUser();
+      console.warn("[lane-context] workspace scan returned 0 projects", {
+        resolvedUserId: who.data.user?.id ?? null,
+        scanWorkspaceId,
+        gotUserError: who.error?.message ?? null,
+      });
+    }
+    return { ...EMPTY_CONTEXT };
+  }
   const workspaceIds = [...new Set((projects.data ?? []).map((project) => project.workspace_id))];
   // Per-project access ('view' | 'edit' | 'admin') so the agent only proposes
   // mutations on projects the caller can edit. Small N (<= 12 or scoped).
