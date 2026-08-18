@@ -173,6 +173,51 @@ function renderActivityLog(s: Spec): string {
     }).join("") : emptyRow("No activity recorded yet.")}</section>`;
 }
 
+function renderTimeline(s: Spec): string {
+  const start = str(s.start), end = str(s.end), today = str(s.today);
+  const t0 = Date.parse(`${start}T00:00:00Z`);
+  const t1 = Date.parse(`${end}T00:00:00Z`);
+  const span = Math.max(1, t1 - t0);
+  const pos = (iso: string): number => { const t = Date.parse(`${iso}T00:00:00Z`); return isNaN(t) ? 0 : Math.min(100, Math.max(0, ((t - t0) / span) * 100)); };
+  const lanes = arr(s.lanes), phases = arr(s.phases), milestones = arr(s.milestones);
+  const ticks: string[] = [];
+  const d = new Date(t0); d.setUTCDate(1);
+  while (d.getTime() <= t1) {
+    const iso = d.toISOString().slice(0, 10);
+    const left = ((Date.parse(`${iso}T00:00:00Z`) - t0) / span) * 100;
+    if (left >= -2 && left <= 100) ticks.push(`<span class="gtick" style="left:${Math.max(0, left)}%">${d.toLocaleDateString(undefined, { month: "short" })}</span>`);
+    d.setUTCMonth(d.getUTCMonth() + 1);
+  }
+  const todayLeft = pos(today);
+  const todayLine = todayLeft >= 0 && todayLeft <= 100 ? `<div class="gtoday" style="left:${todayLeft}%"></div>` : "";
+  const phaseBands = phases.map((p) => {
+    const l = pos(str(p.startsOn)), r = pos(str(p.endsOn)), w = Math.max(1.5, r - l);
+    const c = str(p.color);
+    return `<div class="gphase" style="left:${l}%;width:${w}%;${c ? `background:${esc(c)}1f;border-color:${esc(c)}55` : ""}" title="${esc(str(p.name))}"><span>${esc(str(p.name))}</span></div>`;
+  }).join("");
+  const laneRows = lanes.map((lane) => {
+    const bars = arr(lane.activities).map((a) => {
+      const s0 = str(a.startsOn), d0 = str(a.dueOn);
+      if (!s0 && !d0) return "";
+      const l = pos(s0 || d0), r = pos(d0 || s0), w = Math.max(1.2, r - l);
+      return `<div class="gbar gs-${esc(str(a.status))}" style="left:${l}%;width:${w}%" title="${esc(str(a.title))}"><i style="width:${num(a.progress)}%"></i><span>${esc(str(a.title))}</span></div>`;
+    }).join("");
+    return `<div class="glane"><span class="glabel" title="${esc(str(lane.name))}">${esc(str(lane.name))}</span><div class="gtrack">${todayLine}${bars}</div></div>`;
+  }).join("");
+  const msRow = milestones.length
+    ? `<div class="glane"><span class="glabel muted">Milestones</span><div class="gtrack gtrack-ms">${todayLine}${milestones.map((m) => `<span class="gdia gs-${esc(str(m.status))}" style="left:${pos(str(m.targetDate))}%" title="${esc(str(m.title))} · ${esc(fmtDate(m.targetDate))}"></span>`).join("")}</div></div>`
+    : "";
+  const undated = num(s.undatedCount);
+  return `${head("Timeline", `${str(s.projectName)} · ${fmtDate(start)} – ${fmtDate(end)}`)}
+    <div class="gwrap">
+      <div class="glane ghead"><span class="glabel"></span><div class="gtrack gmonths">${ticks.join("")}</div></div>
+      ${phases.length ? `<div class="glane"><span class="glabel muted">Phases</span><div class="gtrack">${todayLine}${phaseBands}</div></div>` : ""}
+      ${laneRows || emptyRow("No dated activities to plot.")}
+      ${msRow}
+    </div>
+    ${undated ? `<p class="muted vempty">${undated} activit${undated === 1 ? "y has" : "ies have"} no dates and aren't shown.</p>` : ""}`;
+}
+
 function renderCallout(s: Spec): string {
   const tone = str(s.tone) || "info";
   return `<div class="card vcallout tone-${esc(tone)}">${badge("Lane")}<h2>${esc(str(s.title))}</h2><p class="muted">${esc(str(s.body))}</p></div>`;
@@ -192,11 +237,12 @@ function render(spec: Spec | null): void {
     case "workload": body = renderWorkload(spec); break;
     case "attention": body = renderAttention(spec); break;
     case "activity_log": body = renderActivityLog(spec); break;
+    case "timeline": body = renderTimeline(spec); break;
     case "portfolio_health": body = renderPortfolio(spec); break;
     case "callout": root.innerHTML = renderCallout(spec); return;
     default: body = `${head("View")}${emptyRow(`Unsupported view: ${view || "unknown"}.`)}`;
   }
-  root.innerHTML = `<div class="card vcard">${body}</div>`;
+  root.innerHTML = `<div class="card vcard${view === "timeline" ? " gantt" : ""}">${body}</div>`;
 }
 
 // App-local styles layered on the shared shell.
@@ -238,6 +284,28 @@ style.textContent = `
   .attn-hero { display:flex; align-items:center; gap:12px; }
   .attn-score { font-size:30px; font-weight:640; letter-spacing:-.04em; color:var(--purple); }
   .logrow { align-items:center; }
+  /* Timeline / Gantt */
+  .gantt { max-width:820px; }
+  .gwrap { margin-top:10px; border:1px solid var(--line); border-radius:12px; padding:6px 10px 10px; overflow-x:auto; }
+  .glane { display:grid; grid-template-columns:112px 1fr; align-items:center; gap:10px; min-height:26px; }
+  .glane + .glane { border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent); }
+  .glabel { overflow:hidden; font-size:11.5px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; color:var(--ink); }
+  .glabel.muted { color:var(--muted); font-weight:700; font-size:10px; letter-spacing:.06em; text-transform:uppercase; }
+  .gtrack { position:relative; height:24px; }
+  .ghead { min-height:18px; } .ghead .gtrack { height:16px; }
+  .gmonths .gtick { position:absolute; top:0; font-size:9.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); transform:translateX(1px); border-left:1px solid color-mix(in srgb,var(--line) 60%,transparent); padding-left:3px; }
+  .gtoday { position:absolute; top:-2px; bottom:-2px; width:2px; background:color-mix(in srgb,var(--red) 55%,transparent); z-index:1; }
+  .gphase { position:absolute; top:4px; height:16px; border:1px solid var(--line); border-radius:6px; background:var(--subtle); display:flex; align-items:center; overflow:hidden; }
+  .gphase span { padding:0 6px; font-size:10px; font-weight:650; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gbar { position:absolute; top:5px; height:15px; border-radius:5px; background:var(--subtle); overflow:hidden; display:flex; align-items:center; box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ink) 8%,transparent); }
+  .gbar > i { position:absolute; left:0; top:0; bottom:0; background:color-mix(in srgb,var(--purple) 28%,transparent); }
+  .gbar > span { position:relative; padding:0 6px; font-size:10px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gbar.gs-in_progress { background:var(--purple-bg); } .gbar.gs-in_progress > i { background:color-mix(in srgb,var(--purple) 34%,transparent); }
+  .gbar.gs-blocked { background:color-mix(in srgb,var(--red) 16%,transparent); }
+  .gbar.gs-done { background:color-mix(in srgb,var(--jade) 18%,transparent); } .gbar.gs-done > i { background:color-mix(in srgb,var(--jade) 30%,transparent); }
+  .gtrack-ms { height:18px; }
+  .gdia { position:absolute; top:3px; width:11px; height:11px; margin-left:-5px; transform:rotate(45deg); border-radius:2px; background:var(--purple); box-shadow:0 0 0 2px var(--card-bg); }
+  .gdia.gs-completed { background:var(--jade); } .gdia.gs-missed { background:var(--red); }
 `;
 document.head.appendChild(style);
 
