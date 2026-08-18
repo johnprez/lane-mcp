@@ -16,6 +16,7 @@ import { ENTITY_APP_HTML } from "./generated/entity-app.js";
 import { DEPS_APP_HTML } from "./generated/deps-app.js";
 import { TASKS_APP_HTML } from "./generated/tasks-app.js";
 import { VIEW_APP_HTML } from "./generated/view-app.js";
+import { SUGGEST_APP_HTML } from "./generated/suggest-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -43,6 +44,7 @@ const ENTITY_APP_URI = "ui://lane/record";
 const DEPS_APP_URI = "ui://lane/dependencies";
 const TASKS_APP_URI = "ui://lane/tasks";
 const VIEW_APP_URI = "ui://lane/view";
+const SUGGEST_APP_URI = "ui://lane/suggest";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   server.registerResource(
@@ -112,6 +114,15 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     VIEW_APP_URI,
     { title: "Ask Lane view", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: VIEW_APP_HTML }] }),
+  );
+  // Suggested-dependencies checklist: the model proposes predecessor→successor
+  // edges; the card resolves titles, drops already-linked/self edges, and applies
+  // the checked ones via dependency.bulkCreate.
+  server.registerResource(
+    "lane-suggest-app",
+    SUGGEST_APP_URI,
+    { title: "Ask Lane suggested dependencies", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: SUGGEST_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -406,6 +417,31 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
       return {
         content: [{ type: "text", text: `Rendered the ${view} view.` }],
         structuredContent: result,
+      };
+    },
+  );
+
+  server.registerTool(
+    "lane_suggest_dependencies",
+    {
+      title: "Suggest activity dependencies",
+      description:
+        "Propose predecessor→successor dependencies for a project and let the user review them before applying. Read lane_get_context FIRST, then reason the edges from the plan (schedule, milestones, lanes, titles) and pass them in `edges` as { predecessorId, successorId, lagDays? } using real activity ids. The review card resolves titles, drops any that are self-referential or already linked, and applies the CHECKED ones in one shot via dependency.bulkCreate (cycles/dupes are skipped server-side). Do NOT also call lane_apply_action — the card applies it and reports its own receipt. Use this for 'wire up / suggest / sequence the dependencies' requests.",
+      inputSchema: z.object({
+        projectId: z.string().uuid().describe("The project to connect activities in."),
+        edges: z.array(z.object({
+          predecessorId: z.string().uuid().describe("The activity that must come first."),
+          successorId: z.string().uuid().describe("The activity that depends on it."),
+          lagDays: z.number().int().min(-365).max(365).optional().describe("Optional lag in days (+ waits after, - starts before)."),
+        })).min(1).max(500).describe("The proposed predecessor→successor edges, reasoned from the plan."),
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      _meta: { ui: { resourceUri: SUGGEST_APP_URI } },
+    },
+    async ({ projectId, edges }) => {
+      return {
+        content: [{ type: "text", text: `Proposed ${edges.length} ${edges.length === 1 ? "dependency" : "dependencies"} for review.` }],
+        structuredContent: { projectId, edges },
       };
     },
   );
