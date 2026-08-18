@@ -55,8 +55,10 @@ export function summarizeContextMarkdown(ctx: LaneContext): string {
     const health = str(project.health);
     const status = str(project.status);
     const meta = [status, health].filter(Boolean).join(" · ");
+    const access = str(project.access);
+    const accessLabel = access === "view" ? "view-only (read only)" : access === "admin" ? "full access" : "editable";
     lines.push(`### ${str(project.name) || "(untitled project)"}${meta ? ` — ${meta}` : ""}`);
-    lines.push(`\`${id}\` · ${projectMilestones.length} milestones · ${projectActivities.length} activities`);
+    lines.push(`\`${id}\` · ${accessLabel} · ${projectMilestones.length} milestones · ${projectActivities.length} activities`);
     if (projectMilestones.length) {
       lines.push("");
       lines.push("| Milestone | Status | Target |");
@@ -75,9 +77,10 @@ export function summarizeContextMarkdown(ctx: LaneContext): string {
 /** Chat-friendly workspace picker. */
 export function workspacesMarkdown(workspaces: LaneWorkspace[]): string {
   if (!workspaces.length) return "You are not a member of any Lane workspace yet.";
-  const lines = ["**Your Lane workspaces**", "", "| Workspace | Role | Active | ID |", "| --- | --- | :---: | --- |"];
+  const lines = ["**Your Lane workspaces**", "", "| Workspace | Role | Projects | Active | ID |", "| --- | --- | --- | :---: | --- |"];
   for (const workspace of workspaces) {
-    lines.push(`| ${workspace.name} | ${workspace.role} | ${workspace.active ? "✓" : ""} | \`${workspace.id}\` |`);
+    const projects = workspace.access === "all" ? "all" : "specific (see context)";
+    lines.push(`| ${workspace.name} | ${workspace.role} | ${projects} | ${workspace.active ? "✓" : ""} | \`${workspace.id}\` |`);
   }
   return lines.join("\n");
 }

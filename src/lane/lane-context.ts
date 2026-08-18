@@ -316,6 +316,16 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const projectIds = (projects.data ?? []).map((project) => project.id);
   if (!projectIds.length) return { ...EMPTY_CONTEXT };
   const workspaceIds = [...new Set((projects.data ?? []).map((project) => project.workspace_id))];
+  // Per-project access ('view' | 'edit' | 'admin') so the agent only proposes
+  // mutations on projects the caller can edit. Small N (<= 12 or scoped).
+  const accessResults = await Promise.all(
+    (projects.data ?? []).map((project) => db.rpc("my_project_access", { p_project_id: project.id })),
+  );
+  const accessById = new Map<string, string>();
+  (projects.data ?? []).forEach((project, index) => {
+    const result = accessResults[index];
+    accessById.set(project.id, !result.error && typeof result.data === "string" ? result.data : "view");
+  });
   const projectContext = (projects.data ?? []).map((project) => ({
     id: project.id,
     workspace_id: project.workspace_id,
@@ -327,6 +337,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     target_date: project.due_on,
     version: project.version,
     updated_at: project.updated_at,
+    access: accessById.get(project.id) ?? "view",
   }));
   const [lanes, phases, milestones, activities, tasks, events, people, roles, groups, projectPeople, lanePeople, milestonePeople, activityPeople, activityGroups, eventPeople, eventGroups, phaseLanes, activityNotes, milestoneNotes, eventNotes, dependencies] = await Promise.all([
     db.from("workstreams").select("id, project_id, name, description, status, color, version").in("workspace_id", workspaceIds).in("project_id", projectIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.lanes),

@@ -111,7 +111,7 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         "List the Lane workspaces you belong to, with your role and which one is currently active. Call this first to resolve the workspaceId and project scope before reading context or applying actions.",
       inputSchema: z.object({}),
       outputSchema: z.object({
-        workspaces: z.array(z.object({ id: z.string(), name: z.string(), role: z.string(), active: z.boolean() })),
+        workspaces: z.array(z.object({ id: z.string(), name: z.string(), role: z.string(), access: z.enum(["all", "scoped"]), active: z.boolean() })),
       }),
       annotations: { readOnlyHint: true },
       _meta: { ui: { resourceUri: WORKSPACES_APP_URI } },
@@ -137,8 +137,13 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
         projectIds: z.array(z.string().uuid()).min(1).max(20).optional().describe("Focus on multiple specific projects (e.g. canvas multi-select). Wins over projectId when both are provided."),
         include: z.array(z.enum(["timeOff", "deliverables", "links"])).optional().describe("Pull extra data sections on demand: 'timeOff' for availability/PTO, 'deliverables' for handoffs, 'links' for attached resources. Omit when not needed."),
       }),
+      // No fixed UI: lane_get_context answers many different questions (PTO,
+      // workload, schedule, overview…). Binding it to the project-overview
+      // dashboard rendered that same card for every read, even when it was
+      // irrelevant to the question. Reads now return text + the structured graph;
+      // the model composes the answer, and lane_render_view paints a fitting
+      // visual when one helps.
       annotations: { readOnlyHint: true },
-      _meta: { ui: { resourceUri: DASHBOARD_APP_URI } },
     },
     async ({ projectId, projectIds, include }) => {
       const token = await session.accessToken();

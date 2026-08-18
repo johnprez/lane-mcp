@@ -16,6 +16,7 @@ export type MilestoneStatus = "planned" | "in_progress" | "completed" | "missed"
 export type WorkItemStatus = "backlog" | "ready" | "in_progress" | "blocked" | "done" | "canceled";
 export type PriorityLevel = "none" | "low" | "medium" | "high" | "urgent";
 export type ProjectBrandAssetKind = "logo" | "font" | "image" | "style_guide" | "presentation_template" | "other";
+export type ProjectAccessLevel = "view" | "edit";
 
 type TableDefinition<
   Row extends Record<string, unknown>,
@@ -376,13 +377,13 @@ export type Database = {
         {
           id: string; workspace_id: string; project_id: string; work_item_id: string;
           name: string; is_done: boolean; completed_at: string | null; completed_by: string | null;
-          note: string; progress: number;
+          note: string; progress: number; due_at: string | null;
           sort_key: string; version: number; created_by: string; created_at: string; updated_at: string;
         },
         {
           id?: string; workspace_id: string; project_id: string; work_item_id: string;
           name: string; is_done?: boolean; completed_at?: string | null; completed_by?: string | null;
-          note?: string; progress?: number;
+          note?: string; progress?: number; due_at?: string | null;
           sort_key?: string; version?: number; created_by: string; created_at?: string; updated_at?: string;
         }
       >;
@@ -523,7 +524,14 @@ export type Database = {
       };
       create_workspace: { Args: { p_name: string; p_slug?: string | null }; Returns: string };
       set_active_workspace: { Args: { p_workspace_id: string | null }; Returns: boolean };
-      create_workspace_invitation: { Args: { p_workspace_id: string; p_email: string; p_role: WorkspaceRole }; Returns: string };
+      create_workspace_invitation: { Args: { p_workspace_id: string; p_email: string; p_role: WorkspaceRole; p_project_grants?: Json }; Returns: string };
+      my_project_access: { Args: { p_project_id: string }; Returns: string };
+      set_project_access: { Args: { p_workspace_id: string; p_project_id: string; p_user_id: string; p_level: ProjectAccessLevel }; Returns: boolean };
+      remove_project_access: { Args: { p_workspace_id: string; p_project_id: string; p_user_id: string }; Returns: boolean };
+      list_project_access: {
+        Args: { p_workspace_id: string };
+        Returns: { project_id: string; user_id: string; email: string; full_name: string; access_level: ProjectAccessLevel; created_at: string }[];
+      };
       revoke_workspace_invitation: { Args: { p_invitation_id: string }; Returns: boolean };
       set_workspace_member_role: { Args: { p_workspace_id: string; p_user_id: string; p_role: WorkspaceRole }; Returns: boolean };
       remove_workspace_member: { Args: { p_workspace_id: string; p_user_id: string }; Returns: boolean };
@@ -751,7 +759,7 @@ export type Database = {
           p_workspace_id: string; p_project_id: string; p_work_item_id: string;
           p_checklist_item_id: string | null; p_expected_version: number | null;
           p_name: string; p_is_done: boolean; p_sort_key: string; p_person_ids: string[];
-          p_note: string; p_progress: number;
+          p_note: string; p_progress: number; p_due_at?: string | null;
         };
         Returns: Json;
       };
@@ -807,6 +815,7 @@ export type Database = {
       dashboard_section_type: "overview" | "projects" | "workstreams" | "milestones" | "work_items" | "updates" | "risks" | "decisions" | "ai_summary";
       ai_run_status: "queued" | "running" | "completed" | "failed" | "canceled";
       ai_suggestion_status: "proposed" | "accepted" | "rejected" | "applied";
+      project_access_level: ProjectAccessLevel;
     };
     CompositeTypes: Record<string, never>;
   };

@@ -8,7 +8,7 @@ import { laneContextClient } from "./lane-context";
  * Token-scoped (RLS) rather than reusing `loadWorkspaceSwitcher`, which depends
  * on `next/headers` cookies; the MCP route only has a Bearer token.
  */
-export type LaneWorkspace = { id: string; name: string; role: string; active: boolean };
+export type LaneWorkspace = { id: string; name: string; role: string; access: "all" | "scoped"; active: boolean };
 
 export async function listLaneWorkspaces(accessToken: string): Promise<LaneWorkspace[]> {
   const db = laneContextClient(accessToken);
@@ -30,12 +30,13 @@ export async function listLaneWorkspaces(accessToken: string): Promise<LaneWorks
   if (workspaces.error) throw new Error(`Lane could not read your workspaces: ${workspaces.error.message}`);
 
   const activeId = profile.error ? null : profile.data?.active_workspace_id ?? null;
-  const options = (workspaces.data ?? []).map((workspace) => ({
-    id: workspace.id,
-    name: workspace.name,
-    role: roleByWorkspace.get(workspace.id) ?? "viewer",
-    active: false,
-  }));
+  const options = (workspaces.data ?? []).map((workspace) => {
+    const role = roleByWorkspace.get(workspace.id) ?? "viewer";
+    // admin/owner see every project; viewer/editor are scoped to granted projects,
+    // so Claude should call lane_get_context to discover which projects it can reach.
+    const access: "all" | "scoped" = role === "admin" || role === "owner" ? "all" : "scoped";
+    return { id: workspace.id, name: workspace.name, role, access, active: false };
+  });
   // A single-workspace member is implicitly active; otherwise honor the
   // persisted selection so Claude widens reads to the right scope.
   const resolvedActive = options.length === 1 ? options[0]?.id : (activeId && options.some((o) => o.id === activeId) ? activeId : null);
