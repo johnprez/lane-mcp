@@ -15,6 +15,7 @@ import { ACTIVITY_APP_HTML } from "./generated/activity-app.js";
 import { ENTITY_APP_HTML } from "./generated/entity-app.js";
 import { DEPS_APP_HTML } from "./generated/deps-app.js";
 import { TASKS_APP_HTML } from "./generated/tasks-app.js";
+import { VIEW_APP_HTML } from "./generated/view-app.js";
 
 /**
  * Registers Lane's three tools on a stdio MCP server. Auth comes from the local
@@ -41,6 +42,7 @@ const ACTIVITY_APP_URI = "ui://lane/activity";
 const ENTITY_APP_URI = "ui://lane/record";
 const DEPS_APP_URI = "ui://lane/dependencies";
 const TASKS_APP_URI = "ui://lane/tasks";
+const VIEW_APP_URI = "ui://lane/view";
 
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
   server.registerResource(
@@ -101,6 +103,15 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     TASKS_APP_URI,
     { title: "Ask Lane tasks board", mimeType: APP_MIME },
     async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: TASKS_APP_HTML }] }),
+  );
+  // Generative view for lane_render_view: renders whichever data-bound view the
+  // model requested (availability/PTO, overview, milestones, deliverables,
+  // activities, signals, portfolio) from the server-computed spec — read-only.
+  server.registerResource(
+    "lane-view-app",
+    VIEW_APP_URI,
+    { title: "Ask Lane view", mimeType: APP_MIME },
+    async (uri) => ({ contents: [{ uri: uri.href, mimeType: APP_MIME, text: VIEW_APP_HTML }] }),
   );
 
   server.registerTool(
@@ -368,6 +379,32 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
       const text = `Your plan export is ready.\nFormat: ${result.format as string}\nFile: ${result.fileName as string}\nDownload URL (open in your browser): ${result.downloadUrl as string}`;
       return {
         content: [{ type: "text", text }],
+        structuredContent: result,
+      };
+    },
+  );
+
+  server.registerTool(
+    "lane_render_view",
+    {
+      title: "Render a Lane view",
+      description:
+        "Render a rich, read-only view of real Lane data in the chat — Lane computes the numbers server-side so you never invent them. Pick `view`: `availability` (who is on PTO + any owner/PTO scheduling conflicts — use for ANY 'who's out / is anyone on time off / PTO / vacation / availability' question), `project_overview` (compact status header), `project_signals` (health/risk tiles), `milestones` (milestone sequence), `deliverables` (deliverable status + timeline), `activities` (work items grouped by lane with tasks, progress, assignees), `portfolio_health` (portfolio roll-up). Pass `projectId` for the project-scoped views. `availability` and `portfolio_health` may omit projectId to span the active workspace (pass `workspaceId` to target one). Read-only; changes nothing.",
+      inputSchema: z.object({
+        view: z.enum(["availability", "project_overview", "project_signals", "milestones", "deliverables", "activities", "portfolio_health"]).describe("Which view to render."),
+        projectId: z.string().uuid().optional().describe("Required for project_overview/project_signals/milestones/deliverables/activities; optional for availability (project vs workspace)."),
+        workspaceId: z.string().uuid().optional().describe("For workspace-scoped availability or portfolio_health; defaults to the active workspace."),
+      }),
+      annotations: { readOnlyHint: true },
+      _meta: { ui: { resourceUri: VIEW_APP_URI } },
+    },
+    async ({ view, projectId, workspaceId }) => {
+      const request: Record<string, unknown> = { view };
+      if (projectId) request.projectId = projectId;
+      if (workspaceId) request.workspaceId = workspaceId;
+      const result = await session.renderView(request);
+      return {
+        content: [{ type: "text", text: `Rendered the ${view} view.` }],
         structuredContent: result,
       };
     },

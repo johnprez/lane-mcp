@@ -111,6 +111,25 @@ export class LaneSession {
     }
   }
 
+  /** Build a read-only generative view (availability/PTO, overview, milestones,
+   *  deliverables, activities, signals, portfolio) via the shared hosted builder. */
+  async renderView(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const response = await fetch(`${this.apiUrl}/api/mcp/view`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new Error(`Lane returned a non-JSON view response (HTTP ${response.status}): ${text.slice(0, 200)}`);
+    }
+    if (!response.ok) throw new Error((payload.error as string | undefined) ?? `Lane could not render that view (HTTP ${response.status}).`);
+    return (payload.view as Record<string, unknown>) ?? payload;
+  }
+
   /** Validate export access and return a browser-openable download URL. */
   async planExport(body: { projectId: string; format: string; title?: string }): Promise<Record<string, unknown>> {
     const response = await fetch(`${this.apiUrl}/api/mcp/plan-export`, {

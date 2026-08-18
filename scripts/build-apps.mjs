@@ -19,6 +19,7 @@ const apps = [
   { name: "entity", entry: "src/app-src/entity.ts", exportName: "ENTITY_APP_HTML" },
   { name: "deps", entry: "src/app-src/deps.ts", exportName: "DEPS_APP_HTML" },
   { name: "tasks", entry: "src/app-src/tasks.ts", exportName: "TASKS_APP_HTML" },
+  { name: "view", entry: "src/app-src/view.ts", exportName: "VIEW_APP_HTML" },
 ];
 
 // Shared shell + Lane-themed, light/dark-aware styles. Each app owns its markup
