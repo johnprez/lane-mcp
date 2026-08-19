@@ -4,6 +4,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { loadConfig } from "./config.js";
 import { LaneSession } from "./session.js";
 import { registerLaneTools } from "./tools.js";
+import { LANE_INSTRUCTIONS } from "./instructions.js";
 import { serveHttp } from "./http.js";
 
 /**
@@ -33,7 +34,7 @@ function main() {
   }
 
   serveStdio(() => {
-    const server = new McpServer({ name: "lane", version: "1.0.0" }, { capabilities: { tools: {} } });
+    const server = new McpServer({ name: "lane", version: "1.0.0" }, { capabilities: { tools: {} }, instructions: LANE_INSTRUCTIONS });
     // MCP Apps diagnostic: log what the host advertises on initialize. If it does
     // not include an `io.modelcontextprotocol/ui` extension, this transport isn't
     // offered interactive-UI (MCP Apps) support and a `ui://` resource won't render.

@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 
 import { registerLaneTools } from "./tools.js";
+import { LANE_INSTRUCTIONS } from "./instructions.js";
 import type { LaneSession } from "./session.js";
 
 /**
@@ -17,7 +18,7 @@ const PATH = "/mcp";
 
 export function serveHttp(session: LaneSession, opts: { host: string; port: number }): void {
   const handler = createMcpHandler(() => {
-    const server = new McpServer({ name: "lane", version: "1.0.0" }, { capabilities: { tools: {} } });
+    const server = new McpServer({ name: "lane", version: "1.0.0" }, { capabilities: { tools: {} }, instructions: LANE_INSTRUCTIONS });
     registerLaneTools(server, session);
     return server;
   });
