@@ -15,11 +15,11 @@ wireTheme(app);
 
 type Row = Record<string, unknown>;
 type Ctx = {
-  milestones?: Row[]; phases?: Row[]; deliverables?: Row[]; timeOff?: Row[]; lanes?: Row[]; people?: Row[]; roles?: Row[]; groups?: Row[];
+  milestones?: Row[]; phases?: Row[]; deliverables?: Row[]; timeOff?: Row[]; lanes?: Row[]; people?: Row[]; roles?: Row[]; groups?: Row[]; risks?: Row[]; decisions?: Row[];
   assignments?: { phaseLanes?: Row[]; personRoles?: Row[]; groupMembers?: Row[] };
   notes?: { milestones?: Row[]; deliverables?: Row[] };
 };
-type Kind = "milestone" | "phase" | "deliverable" | "pto" | "person" | "role" | "group";
+type Kind = "milestone" | "phase" | "deliverable" | "pto" | "person" | "role" | "group" | "risk" | "decision";
 type Field =
   | { name: string; label: string; type: "text" | "textarea" | "date" | "number"; required?: boolean; value?: string }
   | { name: string; label: string; type: "select"; options: Opt[]; required?: boolean; value?: string }
@@ -43,7 +43,7 @@ let connected = false;
 let started = false;
 let busy = false;
 
-const NOUN: Record<Kind, string> = { milestone: "milestone", phase: "phase", deliverable: "deliverable", pto: "time off", person: "team member", role: "role", group: "group" };
+const NOUN: Record<Kind, string> = { milestone: "milestone", phase: "phase", deliverable: "deliverable", pto: "time off", person: "team member", role: "role", group: "group", risk: "risk", decision: "decision" };
 const WORKSPACE_KINDS = new Set<Kind>(["pto", "person", "role", "group"]);
 
 function peopleOpts(): Opt[] {
@@ -57,7 +57,7 @@ function laneOpts(): Opt[] {
 }
 function current(): Row | undefined {
   const list = kind === "milestone" ? ctx.milestones : kind === "phase" ? ctx.phases : kind === "deliverable" ? ctx.deliverables
-    : kind === "pto" ? ctx.timeOff : kind === "person" ? ctx.people : kind === "role" ? ctx.roles : ctx.groups;
+    : kind === "pto" ? ctx.timeOff : kind === "person" ? ctx.people : kind === "role" ? ctx.roles : kind === "risk" ? ctx.risks : kind === "decision" ? ctx.decisions : ctx.groups;
   return (list ?? []).find((r) => str(r.id) === entityId);
 }
 function phaseLaneIds(): string[] {
@@ -140,6 +140,23 @@ function fields(): Field[] {
         { name: "description", label: "Description", type: "textarea", value: str(a.description) },
         color("#7357e8"),
         { name: "personIds", label: "Members", type: "multi", options: peopleOpts(), selected: groupMemberIds() },
+      ];
+    case "risk":
+      return [
+        { name: "title", label: "Title", type: "text", required: true, value: str(a.title) },
+        { name: "description", label: "Description", type: "textarea", value: str(a.description) },
+        { name: "mitigation", label: "Mitigation", type: "textarea", value: str(a.mitigation) },
+        { name: "status", label: "Status", type: "select", options: opt(["open", "mitigating", "accepted", "resolved", "closed"]), value: str(a.status) || "open" },
+        { name: "likelihood", label: "Likelihood (1–5)", type: "select", options: opt(["1", "2", "3", "4", "5"]), value: String(num(a.likelihood) || 3) },
+        { name: "impact", label: "Impact (1–5)", type: "select", options: opt(["1", "2", "3", "4", "5"]), value: String(num(a.impact) || 3) },
+        { name: "dueDate", label: "Review by", type: "date", value: dateVal(a.due_on) },
+      ];
+    case "decision":
+      return [
+        { name: "title", label: "Title", type: "text", required: true, value: str(a.title) },
+        { name: "context", label: "Context", type: "textarea", value: str(a.context) },
+        { name: "decision", label: "Decision", type: "textarea", value: str(a.decision) },
+        { name: "status", label: "Status", type: "select", options: opt(["proposed", "decided"]), value: str(a.status) === "superseded" ? "decided" : (str(a.status) || "proposed") },
       ];
   }
 }
@@ -230,6 +247,23 @@ function buildAction(): Record<string, unknown> | { error: string } {
     const base = { projectId, workspaceId, name, description: val("f_description"), color: radio("f_color") || "#7357e8", personIds: checks("f_personIds") };
     return editing ? { action: "group.update", groupId: entityId, expectedVersion: ver, ...base } : { action: "group.create", ...base };
   }
+  if (kind === "risk") {
+    if (!projectId) return { error: "No project scoped." };
+    const title = val("f_title");
+    if (!title) return { error: "Title is required." };
+    const base = { projectId, title, description: val("f_description"), mitigation: val("f_mitigation"), status: val("f_status") || "open", likelihood: Number(val("f_likelihood")) || 3, impact: Number(val("f_impact")) || 3, dueDate: orNull(val("f_dueDate")) };
+    return editing ? { action: "risk.update", riskId: entityId, ...base } : { action: "risk.create", ...base };
+  }
+  if (kind === "decision") {
+    if (!projectId) return { error: "No project scoped." };
+    const title = val("f_title");
+    if (!title) return { error: "Title is required." };
+    const status = val("f_status") || "proposed";
+    const decision = val("f_decision");
+    if (status === "decided" && !decision) return { error: "A decided decision needs the decision text." };
+    const base = { projectId, title, context: val("f_context"), decision, status };
+    return editing ? { action: "decision.update", decisionId: entityId, ...base } : { action: "decision.create", ...base };
+  }
   // pto
   if (!projectId || !workspaceId) return { error: "Time off needs a project and workspace in scope." };
   const personId = val("f_personId");
@@ -245,7 +279,9 @@ function buildAction(): Record<string, unknown> | { error: string } {
 async function reload(): Promise<void> {
   if (!projectId) return;
   try {
-    const result = await app.callServerTool({ name: "lane_get_context", arguments: { projectId } });
+    const args: Record<string, unknown> = { projectId };
+    if (kind === "risk" || kind === "decision") args.include = ["risks"];
+    const result = await app.callServerTool({ name: "lane_get_context", arguments: args });
     ctx = (result as { structuredContent?: Ctx }).structuredContent ?? {};
   } catch {
     /* keep last */

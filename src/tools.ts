@@ -157,7 +157,7 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
       inputSchema: z.object({
         projectId: z.string().uuid().optional().describe("Focus the read on one project. Omit to read the whole active workspace."),
         projectIds: z.array(z.string().uuid()).min(1).max(20).optional().describe("Focus on multiple specific projects (e.g. canvas multi-select). Wins over projectId when both are provided."),
-        include: z.array(z.enum(["timeOff", "deliverables", "links"])).optional().describe("Pull extra data sections on demand: 'timeOff' for availability/PTO, 'deliverables' for handoffs, 'links' for attached resources. Omit when not needed."),
+        include: z.array(z.enum(["timeOff", "deliverables", "links", "risks"])).optional().describe("Pull extra data sections on demand: 'timeOff' for availability/PTO, 'deliverables' for handoffs, 'links' for attached resources, 'risks' for the risk register AND decision log. Omit when not needed."),
       }),
       // No fixed UI: lane_get_context answers many different questions (PTO,
       // workload, schedule, overview…). Binding it to the project-overview
@@ -271,9 +271,9 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     {
       title: "Open a Lane record editor",
       description:
-        "Open an interactive editor for a milestone, phase, deliverable, time-off entry, team member (person), role, or group — create or edit. Milestones and deliverables get a Notes tab; a person carries roles + primary role; a group carries members. Pass `kind` and the active `projectId`. To EDIT an existing record, also pass its `entityId`; omit it to CREATE. For the workspace-scoped kinds — `pto`, `person`, `role`, `group` — also pass `workspaceId`. The user edits and applies changes themselves; the editor calls the write tool and reports its own receipts — do NOT also call lane_apply_action for it.",
+        "Open an interactive editor for a milestone, phase, deliverable, time-off entry, team member (person), role, group, risk, or decision — create or edit. Milestones and deliverables get a Notes tab; a person carries roles + primary role; a group carries members. Pass `kind` and the active `projectId`. To EDIT an existing record, also pass its `entityId`; omit it to CREATE. For the workspace-scoped kinds — `pto`, `person`, `role`, `group` — also pass `workspaceId` (risk and decision are project-scoped, no workspaceId). The user edits and applies changes themselves; the editor calls the write tool and reports its own receipts — do NOT also call lane_apply_action for it.",
       inputSchema: z.object({
-        kind: z.enum(["milestone", "phase", "deliverable", "pto", "person", "role", "group"]),
+        kind: z.enum(["milestone", "phase", "deliverable", "pto", "person", "role", "group", "risk", "decision"]),
         projectId: z.string().uuid().describe("The project in scope (required for every kind)."),
         workspaceId: z.string().uuid().optional().describe("Required for the workspace-scoped kinds: pto, person, role, group."),
         entityId: z.string().uuid().optional().describe("Existing record to edit. Omit to create a new one."),

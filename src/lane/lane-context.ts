@@ -67,6 +67,8 @@ const CONTEXT_ROW_LIMITS = {
   deliverables: 200,
   timeOff: 250,
   links: 300,
+  risks: 200,
+  decisions: 200,
 } as const;
 
 function compactText(value: unknown, maximum: number): unknown {
@@ -156,6 +158,8 @@ export type LaneContext = {
   timeOff?: LaneContextRow[];
   deliverables?: LaneContextRow[];
   links?: LaneContextRow[];
+  risks?: LaneContextRow[];
+  decisions?: LaneContextRow[];
 };
 
 export type LaneContextBrand = { guidelinesMarkdown: string; exportDesignMarkdown: string };
@@ -184,7 +188,7 @@ export type LaneContextInsights = {
 };
 
 /** Optional context sections Eve pulls on demand based on the question. */
-export type LaneContextSection = "timeOff" | "deliverables" | "links";
+export type LaneContextSection = "timeOff" | "deliverables" | "links" | "risks";
 
 const EMPTY_CONTEXT: LaneContext = {
   projects: [], lanes: [], phases: [], milestones: [], activities: [], tasks: [],
@@ -429,7 +433,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
 
   // Opt-in sections: only hit the DB for what the caller asked for.
   const empty = { data: [] as unknown[], error: null };
-  const [timeOffRes, deliverablesRes, deliverableNotesRes, linksRes] = await Promise.all([
+  const [timeOffRes, deliverablesRes, deliverableNotesRes, linksRes, risksRes, decisionsRes] = await Promise.all([
     want.has("timeOff")
       ? db.from("person_time_off").select("id, workspace_id, person_id, starts_on, ends_on, note, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.timeOff)
       : Promise.resolve(empty),
@@ -442,11 +446,19 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     want.has("links")
       ? db.from("plan_object_links").select("id, project_id, object_type, object_id, url, label, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.links)
       : Promise.resolve(empty),
+    want.has("risks")
+      ? db.from("risks").select("id, project_id, workstream_id, title, description, mitigation, status, likelihood, impact, score, due_on").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.risks)
+      : Promise.resolve(empty),
+    want.has("risks")
+      ? db.from("decisions").select("id, project_id, title, context, decision, status, decided_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.decisions)
+      : Promise.resolve(empty),
   ]);
   const timeOffRows = optionalContext("time-off", timeOffRes, []) as LaneContextRow[];
   const deliverableRows = optionalContext("deliverables", deliverablesRes, []) as LaneContextRow[];
   const deliverableNoteRows = optionalContext("deliverable-notes", deliverableNotesRes, []) as LaneContextRow[];
   const linkRows = optionalContext("links", linksRes, []) as LaneContextRow[];
+  const riskRows = optionalContext("risks", risksRes, []) as LaneContextRow[];
+  const decisionRows = optionalContext("decisions", decisionsRes, []) as LaneContextRow[];
 
   // Brand-aware report guidance for a single focused project. Additive + tolerant
   // of the (out-of-band) profile columns not being deployed yet.
@@ -499,5 +511,6 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     ...(want.has("timeOff") ? { timeOff: compactRows(timeOffRows ?? [], CONTEXT_ROW_LIMITS.timeOff) } : {}),
     ...(want.has("deliverables") ? { deliverables: compactRows(deliverableRows ?? [], CONTEXT_ROW_LIMITS.deliverables) } : {}),
     ...(want.has("links") ? { links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links) } : {}),
+    ...(want.has("risks") ? { risks: compactRows(riskRows ?? [], CONTEXT_ROW_LIMITS.risks), decisions: compactRows(decisionRows ?? [], CONTEXT_ROW_LIMITS.decisions) } : {}),
   };
 }
