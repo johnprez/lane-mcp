@@ -153,10 +153,11 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     {
       title: "Read Lane plan context",
       description:
-        "Read the current Lane plan graph for you (projects, lanes, phases, milestones, activities, tasks, events, people, roles, groups, assignments, notes, dependencies). Pass a projectId to focus on one project, or omit it to read across the active workspace. Returns a chat summary plus the full structured graph — use the structured data to build tables, timelines, or other visual artifacts.",
+        "Read the current Lane plan graph for you (projects, lanes, phases, milestones, activities, tasks, events, people, roles, groups, assignments, notes, dependencies). Works across ANY workspace you can access — you do NOT need to switch your active workspace. Pass a projectId (from any workspace) to focus on one project; or omit it to read across a workspace — pass workspaceId to pick a specific one (get its id from lane_list_workspaces), else your active workspace is used. Returns a chat summary plus the full structured graph — use the structured data to build tables, timelines, or other visual artifacts.",
       inputSchema: z.object({
-        projectId: z.string().uuid().optional().describe("Focus the read on one project. Omit to read the whole active workspace."),
+        projectId: z.string().uuid().optional().describe("Focus the read on one project — in ANY workspace you can access, not just the active one. Omit to read a whole workspace."),
         projectIds: z.array(z.string().uuid()).min(1).max(20).optional().describe("Focus on multiple specific projects (e.g. canvas multi-select). Wins over projectId when both are provided."),
+        workspaceId: z.string().uuid().optional().describe("Scope a workspace-wide read to this workspace (from lane_list_workspaces). Omit to use your active workspace. Lets you read another workspace without switching."),
         include: z.array(z.enum(["timeOff", "deliverables", "links", "risks"])).optional().describe("Pull extra data sections on demand: 'timeOff' for availability/PTO, 'deliverables' for handoffs, 'links' for attached resources, 'risks' for the risk register AND decision log. Omit when not needed."),
       }),
       // No fixed UI: lane_get_context answers many different questions (PTO,
@@ -167,9 +168,9 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
       // visual when one helps.
       annotations: { readOnlyHint: true },
     },
-    async ({ projectId, projectIds, include }) => {
+    async ({ projectId, projectIds, workspaceId, include }) => {
       const token = await session.accessToken();
-      const context = await getLaneContext({ accessToken: token, projectId, projectIds, include });
+      const context = await getLaneContext({ accessToken: token, projectId, projectIds, workspaceId, include });
       return {
         content: [
           { type: "text", text: summarizeContextMarkdown(context) },

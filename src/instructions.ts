@@ -9,6 +9,11 @@ READING
 - Call lane_get_context FIRST to ground real IDs before any change. Pass include:["timeOff"] for availability/PTO, include:["risks"] for risks + decisions, include:["deliverables"] / ["links"] as needed.
 - Use lane_render_view for rich read cards: timeline (Gantt), workload, attention, availability, activity_log, risks_decisions, project_overview, project_signals, milestones, deliverables, activities, portfolio_health. Never invent metric numbers — read them.
 
+WORKSPACES (reading another one)
+- You can read/act in ANY workspace the user belongs to — you never need them to switch their active workspace, and never ask them to.
+- When the user names a workspace or project that isn't the active one, call lane_list_workspaces to get its workspaceId, then pass that workspaceId to lane_get_context (or lane_render_view) to read it. To open a specific project, pass its projectId to lane_get_context — a projectId resolves in any workspace you can access.
+- Typical flow for "show me project X in workspace Y": lane_list_workspaces → lane_get_context({workspaceId: Y}) to find X's projectId → lane_get_context({projectId: X}) for the full plan. Only fall back to the active workspace when the user gives no workspace or project.
+
 CHANGING
 - Every mutation goes through lane_apply_action, one change per approval. For destructive or ambiguous changes, set preview:true first, then re-apply with preview:false.
 - Prefer the interactive editors when the user should fill in details: lane_render_form (event/task/note/link/risk/decision), lane_edit_activity, lane_edit_record (milestone/phase/deliverable/pto/person/role/group/risk/decision), lane_edit_dependencies.
