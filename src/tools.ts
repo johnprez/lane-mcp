@@ -6,6 +6,8 @@ import { listLaneWorkspaces } from "./lane/workspaces.js";
 import { describeAction, summarizeContextMarkdown, workspacesMarkdown } from "./lane/format.js";
 import { LaneAgentActionSchema } from "./lane/action-contracts.js";
 import { LaneProjectActionSchema } from "./lane/project-action-contracts.js";
+import { LaneViewRequestSchema } from "./lane/view-contracts.js";
+import { registerJourneyTools } from "./journey-tools.js";
 import type { LaneSession } from "./session.js";
 import { WORKSPACES_APP_HTML } from "./generated/workspaces-app.js";
 import { APPROVAL_APP_HTML } from "./generated/approval-app.js";
@@ -46,7 +48,19 @@ const TASKS_APP_URI = "ui://lane/tasks";
 const VIEW_APP_URI = "ui://lane/view";
 const SUGGEST_APP_URI = "ui://lane/suggest";
 
+// lane_render_view's `view` enum comes from the vendored view contract (synced
+// from the app), not a hand-kept list: every data-bound request member — one
+// whose only fields are the view, ids, and a limit — is offered. Content views
+// (metric_grid, callout, …) need model-authored bodies this tool doesn't take.
+const isScopeKey = (key: string) => key === "view" || key === "limit" || key.endsWith("Id");
+export const DATA_VIEWS = LaneViewRequestSchema.options
+  .filter((option) => Object.keys(option.shape).every(isScopeKey))
+  .map((option) => option.shape.view.value) as [string, ...string[]];
+
 export function registerLaneTools(server: McpServer, session: LaneSession): void {
+  // Journeys + knowledge (5 reads, 3 approval-gated writes) + the journey app.
+  registerJourneyTools(server, session);
+
   server.registerResource(
     "lane-workspaces-app",
     WORKSPACES_APP_URI,
@@ -401,19 +415,25 @@ export function registerLaneTools(server: McpServer, session: LaneSession): void
     {
       title: "Render a Lane view",
       description:
-        "Render a rich, read-only view of real Lane data in the chat — Lane computes the numbers server-side so you never invent them. Pick `view`: `availability` (who is on PTO + any owner/PTO scheduling conflicts — use for ANY 'who's out / time off / PTO / vacation / availability' question), `workload` (each team member's open-activity load + upcoming PTO — use for 'who's overloaded / who has capacity / workload / bandwidth' questions), `attention` (prioritized needs-attention queue: blocked, overdue milestones, behind schedule, unassigned, unscheduled — use for 'what needs attention / what's at risk / what should I look at' questions), `activity_log` (recent activity: who changed what — use for 'what changed / recent activity / who did what' questions), `project_overview` (compact status header), `project_signals` (health/risk tiles), `milestones` (milestone sequence), `deliverables` (deliverable status + timeline), `activities` (work items grouped by lane with tasks, progress, assignees), `timeline` (a Gantt-style schedule: phases, milestones, and activity bars on a date axis — use for 'show me the schedule / timeline / gantt / when things happen' questions), `risks_decisions` (open risks with likelihood/impact score + logged decisions — use for 'what are the risks / risk register / decisions / decision log' questions), `portfolio_health` (portfolio roll-up). Pass `projectId` for the project-scoped views. `availability` and `portfolio_health` may omit projectId to span the active workspace (pass `workspaceId` to target one). Read-only; changes nothing.",
+        "Render a rich, read-only view of real Lane data in the chat — Lane computes the numbers server-side so you never invent them. Pick `view`: `availability` (who is on PTO + any owner/PTO scheduling conflicts — use for ANY 'who's out / time off / PTO / vacation / availability' question), `workload` (each team member's open-activity load + upcoming PTO — use for 'who's overloaded / who has capacity / workload / bandwidth' questions), `attention` (prioritized needs-attention queue: blocked, overdue milestones, behind schedule, unassigned, unscheduled — use for 'what needs attention / what's at risk / what should I look at' questions), `activity_log` (recent activity: who changed what — use for 'what changed / recent activity / who did what' questions), `project_overview` (compact status header), `project_signals` (health/risk tiles), `milestones` (milestone sequence), `deliverables` (deliverable status + timeline), `activities` (work items grouped by lane with tasks, progress, assignees), `timeline` (a Gantt-style schedule: phases, milestones, and activity bars on a date axis — use for 'show me the schedule / timeline / gantt / when things happen' questions), `risks_decisions` (open risks with likelihood/impact score + logged decisions — use for 'what are the risks / risk register / decisions / decision log' questions), `portfolio_health` (portfolio roll-up), plus any newer views in the synced contract (e.g. journey_map, journey_proposal, kg_neighborhood, kg_sources_status — data returned to chat; for an interactive journey use lane_get_journey). Pass `projectId` for the project-scoped views. `availability` and `portfolio_health` may omit projectId to span the active workspace (pass `workspaceId` to target one). Read-only; changes nothing.",
       inputSchema: z.object({
-        view: z.enum(["availability", "workload", "attention", "activity_log", "timeline", "risks_decisions", "project_overview", "project_signals", "milestones", "deliverables", "activities", "portfolio_health"]).describe("Which view to render."),
+        view: z.enum(DATA_VIEWS).describe("Which view to render."),
         projectId: z.string().uuid().optional().describe("Required for all project-scoped views (workload/attention/activity_log/project_overview/project_signals/milestones/deliverables/activities); optional for availability (project vs workspace)."),
-        workspaceId: z.string().uuid().optional().describe("For workspace-scoped availability or portfolio_health; defaults to the active workspace."),
+        workspaceId: z.string().uuid().optional().describe("For workspace-scoped availability or portfolio_health; defaults to the active workspace. Required for kg_sources_status."),
+        journeyId: z.string().uuid().optional().describe("For journey_map. (lane_get_journey opens the interactive journey grid instead.)"),
+        proposalId: z.string().uuid().optional().describe("For journey_proposal."),
+        nodeId: z.string().uuid().optional().describe("For kg_neighborhood."),
       }),
       annotations: { readOnlyHint: true },
       _meta: { ui: { resourceUri: VIEW_APP_URI } },
     },
-    async ({ view, projectId, workspaceId }) => {
+    async ({ view, projectId, workspaceId, journeyId, proposalId, nodeId }) => {
       const request: Record<string, unknown> = { view };
       if (projectId) request.projectId = projectId;
       if (workspaceId) request.workspaceId = workspaceId;
+      if (journeyId) request.journeyId = journeyId;
+      if (proposalId) request.proposalId = proposalId;
+      if (nodeId) request.nodeId = nodeId;
       const result = await session.renderView(request);
       return {
         content: [{ type: "text", text: `Rendered the ${view} view.` }],

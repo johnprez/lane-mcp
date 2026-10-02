@@ -252,7 +252,7 @@ function render(spec: Spec | null): void {
     case "risks_decisions": body = renderRisksDecisions(spec); break;
     case "portfolio_health": body = renderPortfolio(spec); break;
     case "callout": root.innerHTML = renderCallout(spec); return;
-    default: body = `${head("View")}${emptyRow(`Unsupported view: ${view || "unknown"}.`)}`;
+    default: body = `${head("View")}${emptyRow(`This ${view ? view.replace(/_/g, " ") : "view"} has no card here yet — Lane returned its data to the chat.`)}`;
   }
   root.innerHTML = `<div class="card vcard${view === "timeline" ? " gantt" : ""}">${body}</div>`;
 }

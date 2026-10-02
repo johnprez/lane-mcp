@@ -171,6 +171,10 @@ know what's possible.
 | **Record editor** (`lane_edit_record`) | Editor for a milestone, phase, deliverable, time-off entry, team member, role, or group. |
 | **Dependencies** (`lane_edit_dependencies`) | View, add, or remove activity dependencies for a project. |
 | **Tasks board** (`lane_view_tasks`) | Interactive board — activities grouped by lane with progress, owners, and their checklist tasks. |
+| **Journeys** (`lane_list_journeys`, `lane_get_journey`) | Lists a workspace's journeys; opens one as an interactive grid (stages › steps × rows, with card titles). |
+| **Knowledge** (`lane_kg_search`, `lane_kg_explain`, `lane_kg_sources`) | Searches what Lane has read, with cited excerpts (treated as untrusted data), explains an entity's relations, and lists sources. |
+| **Journey proposals** (`lane_propose_journey_changes`, `lane_apply_journey_proposal`) | Claude stores a proposal (changes nothing); the journey card shows each item with a checkbox and Accept / Reject. Supports **preview**. Needs a read-write token. |
+| **Add a link** (`lane_ingest_url`) | Files a web page into Lane's knowledge for a workspace, project, or journey. **preview** shows the cost estimate first. Needs a read-write token. |
 
 ### Everything Claude can change for you
 

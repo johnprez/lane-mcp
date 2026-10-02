@@ -1,5 +1,7 @@
 import type { LaneContext } from "./lane-context";
 import type { LaneWorkspace } from "./workspaces";
+import { formatMoney, formatPercent } from "./format-money";
+import { buildProjectBudget, type BudgetBucketRow, type BudgetItemRow } from "./budget-model";
 
 /**
  * Every MCP tool returns two representations so both Claude Desktop surfaces are
@@ -18,6 +20,93 @@ function str(value: unknown): string {
 
 function count(rows: unknown): number {
   return Array.isArray(rows) ? rows.length : 0;
+}
+
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * The budget block. Rolled up through the SAME buildProjectBudget the Budget tab
+ * uses, so an agent's figures and the UI's can never disagree — in particular a
+ * recurring cost's planned amount is expanded per occurrence here too, and a cost
+ * with no recorded actual counts as 0 while being reported as incomplete.
+ *
+ * Read-only: there are no budget verbs in lane_apply_action in v1.
+ */
+function budgetMarkdown(ctx: LaneContext, projectId: string, projectDates: { startsOn: string | null; dueOn: string | null }): string[] {
+  const source = ctx.budget;
+  if (!source) return [];
+  const totalRow = source.total && str(source.total.project_id) === projectId ? source.total : null;
+  const buckets = source.categories.filter((row) => str(row.project_id) === projectId);
+  const costs = source.costs.filter((row) => str(row.project_id) === projectId);
+  if (!totalRow && buckets.length === 0 && costs.length === 0) return [];
+
+  const budget = buildProjectBudget({
+    project: { id: projectId, startsOn: projectDates.startsOn, dueOn: projectDates.dueOn },
+    budget: totalRow
+      ? {
+          id: str(totalRow.id),
+          total_amount_cents: num(totalRow.total_amount_cents),
+          notes: str(totalRow.notes),
+          version: num(totalRow.version),
+        }
+      : null,
+    buckets: buckets.map((row) => ({
+      id: str(row.id),
+      name: str(row.name),
+      color: "#5368f4",
+      allocated_amount_cents: num(row.allocated_amount_cents),
+      notes: str(row.notes),
+      sort_key: str(row.sort_key) || "m",
+      version: num(row.version),
+    })) as BudgetBucketRow[],
+    items: costs.map((row) => ({
+      id: str(row.id),
+      bucket_id: str(row.bucket_id),
+      name: str(row.name),
+      vendor: str(row.vendor),
+      notes: "",
+      planned_amount_cents: num(row.planned_amount_cents),
+      actual_amount_cents: row.actual_amount_cents == null ? null : num(row.actual_amount_cents),
+      cadence: (str(row.cadence) || "one_time") as BudgetItemRow["cadence"],
+      incurred_on: row.incurred_on == null ? null : str(row.incurred_on),
+      recurrence_start_on: row.recurrence_start_on == null ? null : str(row.recurrence_start_on),
+      recurrence_end_on: row.recurrence_end_on == null ? null : str(row.recurrence_end_on),
+      occurrence_count: row.occurrence_count == null ? null : num(row.occurrence_count),
+      sort_key: str(row.sort_key) || "m",
+      version: num(row.version),
+    })) as BudgetItemRow[],
+  });
+
+  const lines: string[] = [""];
+  const flags = [
+    budget.warnings.includes("over_allocated") ? "over-allocated" : null,
+    budget.warnings.includes("over_budget") ? "over budget" : null,
+    budget.warnings.includes("unbounded_recurring") ? "some recurring costs can't expand without dates" : null,
+  ].filter(Boolean).join(" · ");
+  lines.push(
+    `**Budget** — ${formatMoney(budget.totalCents)} budgeted · ${formatMoney(budget.allocatedCents)} allocated · ` +
+    `${formatMoney(budget.plannedCents)} planned · ${formatMoney(budget.actualCents)} actual · ` +
+    `${formatMoney(budget.remainingCents)} remaining (${formatPercent(budget.utilizationPercent)} used)` +
+    (flags ? ` · ⚠ ${flags}` : ""),
+  );
+  if (budget.itemsMissingActual > 0) {
+    lines.push(`Actuals are incomplete: ${budget.itemCount - budget.itemsMissingActual} of ${budget.itemCount} costs have a recorded actual.`);
+  }
+  if (budget.buckets.length) {
+    lines.push("");
+    lines.push("| Category | Allocated | Planned | Actual | Used |");
+    lines.push("| --- | ---: | ---: | ---: | ---: |");
+    for (const bucket of budget.buckets.slice(0, 12)) {
+      lines.push(
+        `| ${bucket.name}${bucket.isOverBudget ? " ⚠" : ""} | ${formatMoney(bucket.allocatedCents)} | ` +
+        `${formatMoney(bucket.plannedCents)} | ${formatMoney(bucket.actualCents)} | ${formatPercent(bucket.utilizationPercent)} |`,
+      );
+    }
+    if (budget.buckets.length > 12) lines.push(`| …and ${budget.buckets.length - 12} more | | | | |`);
+  }
+  return lines;
 }
 
 /** Short, chat-friendly briefing of the plan graph. */
@@ -68,6 +157,10 @@ export function summarizeContextMarkdown(ctx: LaneContext): string {
       }
       if (projectMilestones.length > 8) lines.push(`| …and ${projectMilestones.length - 8} more | | |`);
     }
+    lines.push(...budgetMarkdown(ctx, id, {
+      startsOn: typeof project.starts_on === "string" ? project.starts_on : null,
+      dueOn: typeof project.due_on === "string" ? project.due_on : null,
+    }));
     lines.push("");
   }
   lines.push("_Full structured plan graph is attached below for building tables or visual artifacts._");
@@ -127,3 +220,7 @@ export function describeAction(action: Record<string, unknown>): string {
     .map(([key, value]) => `- **${key}**: ${Array.isArray(value) ? value.map(str).join(", ") : str(value)}`);
   return [`\`${kind}\``, ...fields].join("\n");
 }
+
+// Journey + knowledge formatters live in an import-free module so the local
+// MCP server can vendor them verbatim; re-exported here for one import site.
+export * from "./journey-format";

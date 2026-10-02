@@ -130,6 +130,34 @@ export class LaneSession {
     return (payload.view as Record<string, unknown>) ?? payload;
   }
 
+  /**
+   * Journey + knowledge calls. Every one is proxied to the hosted endpoint —
+   * reads (/journey, /kg) and writes (/apply-journey, /ingest) — so scope
+   * checks, preview semantics and indexing kick-off all stay server-side. The
+   * endpoint answers { result, text }; errors come back as { error } and are
+   * returned (not thrown) so the tool can show Lane's own wording.
+   */
+  async journeyCall(
+    endpoint: "journey" | "kg" | "apply-journey" | "ingest",
+    body: Record<string, unknown>,
+  ): Promise<{ ok: true; result: Record<string, unknown>; text: string } | { ok: false; status: number; error: string }> {
+    const response = await fetch(`${this.apiUrl}/api/mcp/${endpoint}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let payload: { result?: Record<string, unknown>; text?: string; error?: string };
+    try {
+      payload = JSON.parse(text) as typeof payload;
+    } catch {
+      return { ok: false, status: response.status, error: `Lane returned a non-JSON response (HTTP ${response.status}). Is ${this.apiUrl} running a version with journeys?` };
+    }
+    if (response.status === 401) return { ok: false, status: 401, error: "Lane rejected this token. Regenerate a PAT in Settings → Connect Claude and update your config." };
+    if (!response.ok || !payload.result) return { ok: false, status: response.status, error: payload.error ?? `Lane could not complete that request (HTTP ${response.status}).` };
+    return { ok: true, result: payload.result, text: payload.text ?? "" };
+  }
+
   /** Validate export access and return a browser-openable download URL. */
   async planExport(body: { projectId: string; format: string; title?: string }): Promise<Record<string, unknown>> {
     const response = await fetch(`${this.apiUrl}/api/mcp/plan-export`, {

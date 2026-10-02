@@ -69,6 +69,9 @@ const CONTEXT_ROW_LIMITS = {
   links: 300,
   risks: 200,
   decisions: 200,
+  // Budget: capped well under the 900-item project cap, because an agent needs
+  // the shape of the spend, not every line of it.
+  budget: 300,
 } as const;
 
 function compactText(value: unknown, maximum: number): unknown {
@@ -160,7 +163,53 @@ export type LaneContext = {
   links?: LaneContextRow[];
   risks?: LaneContextRow[];
   decisions?: LaneContextRow[];
+  // Read-only. There are deliberately no budget verbs in lane_apply_action in v1.
+  budget?: { total: LaneContextRow | null; categories: LaneContextRow[]; costs: LaneContextRow[] };
+  // Compact journey list (id, title, type, status, cardCount) — never card text
+  // or knowledge content; get_journey / search_knowledge read those on demand.
+  journeys?: LaneContextJourney[];
 };
+
+export type LaneContextJourney = { id: string; title: string; type: string; status: string; cardCount: number | null };
+
+const JOURNEY_CONTEXT_LIMIT = 25;
+
+/**
+ * The opt-in `journeys` section. Scoped to the journeys linked to the project
+ * in scope when exactly one project is focused, otherwise the workspace's
+ * journeys. RLS hides restricted journeys. A not-yet-deployed journeys schema
+ * reads as an empty list.
+ */
+async function readJourneyContext(db: LaneContextClient, workspaceIds: string[], projectId: string | undefined): Promise<LaneContextJourney[]> {
+  let journeyIds: string[] | null = null;
+  if (projectId) {
+    const links = await db.from("journey_project_links").select("journey_id").in("workspace_id", workspaceIds).eq("project_id", projectId).limit(100);
+    if (links.error) {
+      logContextFailure("journey-links", links.error);
+      return [];
+    }
+    journeyIds = [...new Set((links.data ?? []).map((link) => link.journey_id as string))];
+    if (!journeyIds.length) return [];
+  }
+  let query = db.from("journeys").select("id, title, journey_type, status").in("workspace_id", workspaceIds).is("archived_at", null);
+  if (journeyIds) query = query.in("id", journeyIds);
+  const journeys = await query.order("updated_at", { ascending: false }).limit(JOURNEY_CONTEXT_LIMIT);
+  if (journeys.error) {
+    logContextFailure("journeys", journeys.error);
+    return [];
+  }
+  const rows = journeys.data ?? [];
+  const counts = await Promise.all(
+    rows.map((journey) => db.from("journey_cards").select("id", { count: "exact", head: true }).eq("journey_id", journey.id)),
+  );
+  return rows.map((journey, index) => ({
+    id: journey.id,
+    title: compactText(journey.title, 160) as string,
+    type: journey.journey_type,
+    status: journey.status,
+    cardCount: counts[index]?.error ? null : (counts[index]?.count ?? null),
+  }));
+}
 
 export type LaneContextBrand = { guidelinesMarkdown: string; exportDesignMarkdown: string };
 
@@ -188,7 +237,7 @@ export type LaneContextInsights = {
 };
 
 /** Optional context sections Eve pulls on demand based on the question. */
-export type LaneContextSection = "timeOff" | "deliverables" | "links" | "risks";
+export type LaneContextSection = "timeOff" | "deliverables" | "links" | "risks" | "budget" | "journeys";
 
 const EMPTY_CONTEXT: LaneContext = {
   projects: [], lanes: [], phases: [], milestones: [], activities: [], tasks: [],
@@ -350,6 +399,10 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
         gotUserError: who.error?.message ?? null,
       });
     }
+    // A workspace can hold journeys before it holds projects.
+    if (want.has("journeys") && scanWorkspaceId) {
+      return { ...EMPTY_CONTEXT, journeys: await readJourneyContext(db, [scanWorkspaceId], undefined) };
+    }
     return { ...EMPTY_CONTEXT };
   }
   const workspaceIds = [...new Set((projects.data ?? []).map((project) => project.workspace_id))];
@@ -372,6 +425,11 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     status: project.status,
     health: project.health,
     target_date: project.due_on,
+    // The raw plan window, kept alongside target_date because recurring budget
+    // costs inherit these dates when they carry none of their own — without both,
+    // an agent's expansion would silently disagree with the Budget tab's.
+    starts_on: project.starts_on,
+    due_on: project.due_on,
     version: project.version,
     updated_at: project.updated_at,
     access: accessById.get(project.id) ?? "view",
@@ -433,7 +491,7 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
 
   // Opt-in sections: only hit the DB for what the caller asked for.
   const empty = { data: [] as unknown[], error: null };
-  const [timeOffRes, deliverablesRes, deliverableNotesRes, linksRes, risksRes, decisionsRes] = await Promise.all([
+  const [timeOffRes, deliverablesRes, deliverableNotesRes, linksRes, risksRes, decisionsRes, budgetRes, bucketsRes, costsRes] = await Promise.all([
     want.has("timeOff")
       ? db.from("person_time_off").select("id, workspace_id, person_id, starts_on, ends_on, note, version").in("workspace_id", workspaceIds).is("archived_at", null).limit(CONTEXT_ROW_LIMITS.timeOff)
       : Promise.resolve(empty),
@@ -452,6 +510,15 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     want.has("risks")
       ? db.from("decisions").select("id, project_id, title, context, decision, status, decided_at").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.decisions)
       : Promise.resolve(empty),
+    want.has("budget")
+      ? db.from("project_budgets").select("id, project_id, total_amount_cents, notes, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes)
+      : Promise.resolve(empty),
+    want.has("budget")
+      ? db.from("budget_buckets").select("id, project_id, name, allocated_amount_cents, notes, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.notes)
+      : Promise.resolve(empty),
+    want.has("budget")
+      ? db.from("budget_items").select("id, project_id, bucket_id, name, vendor, planned_amount_cents, actual_amount_cents, cadence, incurred_on, recurrence_start_on, recurrence_end_on, occurrence_count, version").in("workspace_id", workspaceIds).in("project_id", projectIds).limit(CONTEXT_ROW_LIMITS.budget)
+      : Promise.resolve(empty),
   ]);
   const timeOffRows = optionalContext("time-off", timeOffRes, []) as LaneContextRow[];
   const deliverableRows = optionalContext("deliverables", deliverablesRes, []) as LaneContextRow[];
@@ -459,6 +526,11 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
   const linkRows = optionalContext("links", linksRes, []) as LaneContextRow[];
   const riskRows = optionalContext("risks", risksRes, []) as LaneContextRow[];
   const decisionRows = optionalContext("decisions", decisionsRes, []) as LaneContextRow[];
+  const budgetRows = optionalContext("budget", budgetRes, []) as LaneContextRow[];
+  const bucketRows = optionalContext("budget-categories", bucketsRes, []) as LaneContextRow[];
+  const costRows = optionalContext("budget-costs", costsRes, []) as LaneContextRow[];
+
+  const journeyRows = want.has("journeys") ? await readJourneyContext(db, workspaceIds, scopedIds?.length === 1 ? scopedIds[0] : undefined) : [];
 
   // Brand-aware report guidance for a single focused project. Additive + tolerant
   // of the (out-of-band) profile columns not being deployed yet.
@@ -512,5 +584,15 @@ export async function getLaneContext(params: { accessToken: string; projectId?: 
     ...(want.has("deliverables") ? { deliverables: compactRows(deliverableRows ?? [], CONTEXT_ROW_LIMITS.deliverables) } : {}),
     ...(want.has("links") ? { links: compactRows(linkRows ?? [], CONTEXT_ROW_LIMITS.links) } : {}),
     ...(want.has("risks") ? { risks: compactRows(riskRows ?? [], CONTEXT_ROW_LIMITS.risks), decisions: compactRows(decisionRows ?? [], CONTEXT_ROW_LIMITS.decisions) } : {}),
+    ...(want.has("budget")
+      ? {
+          budget: {
+            total: (budgetRows ?? [])[0] ?? null,
+            categories: compactRows(bucketRows ?? [], CONTEXT_ROW_LIMITS.notes),
+            costs: compactRows(costRows ?? [], CONTEXT_ROW_LIMITS.budget),
+          },
+        }
+      : {}),
+    ...(want.has("journeys") ? { journeys: journeyRows } : {}),
   };
 }
