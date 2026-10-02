@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { JourneyProposalItemsSchema, type JourneyProposalOp } from "./journey-contracts";
+import { JOURNEY_ROW_TYPES, JourneyProposalItemsSchema, type JourneyProposalOp } from "./journey-contracts";
 
 /**
  * MCP write + read contracts for journeys and the knowledge graph, shared by
@@ -121,10 +121,63 @@ export const KgIngestUrlActionSchema = z.object({
   depth: z.enum(KG_INGEST_DEPTHS),
 }).strict();
 
+// ── Create (skeleton only) ──────────────────────────────────────────────────
+/** Mirrors the create_journey RPC's journey_type check (and journey-input's journeyTypes). */
+export const JOURNEY_TYPES = ["customer", "service_blueprint", "jtbd", "story_map", "lifecycle", "custom"] as const;
+export const JOURNEY_VISIBILITIES = ["workspace", "restricted"] as const;
+/** create_journey RPC limits: stages ≤ 50, rows ≤ 40, steps ≤ 200 in total. */
+export const JOURNEY_CREATE_LIMITS = { stages: 50, rows: 40, steps: 200, stepsPerStage: 50 } as const;
+/** The `template` recorded for an agent-built map (an existing template id, see templates.ts). */
+export const AGENT_JOURNEY_TEMPLATE_ID = "blank";
+
+const SkeletonName = z.string().trim().min(1).max(120);
+
+/**
+ * Exactly the RPC's p_structure shape (and templates.ts JourneyTemplateStructure):
+ * stages carry step NAMES as strings; rows carry a name + rowType. No cards —
+ * cards go into a propose_journey_changes proposal on the new journey.
+ */
+export const JourneyCreateStructureSchema = z.object({
+  stages: z.array(z.object({
+    name: SkeletonName,
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    steps: z.array(SkeletonName).min(1).max(JOURNEY_CREATE_LIMITS.stepsPerStage).describe("Step names, in order."),
+  }).strict()).min(1).max(JOURNEY_CREATE_LIMITS.stages),
+  rows: z.array(z.object({
+    name: SkeletonName,
+    rowType: z.enum(JOURNEY_ROW_TYPES),
+    isLineOfVisibility: z.boolean().optional(),
+  }).strict()).min(1).max(JOURNEY_CREATE_LIMITS.rows),
+}).strict().refine(
+  (structure) => structure.stages.reduce((sum, stage) => sum + stage.steps.length, 0) <= JOURNEY_CREATE_LIMITS.steps,
+  { message: `Keep the map to ${JOURNEY_CREATE_LIMITS.steps} steps in total.`, path: ["stages"] },
+);
+export type JourneyCreateStructure = z.infer<typeof JourneyCreateStructureSchema>;
+
+/** What create_journey (Eve) approves and the journey gateway executes. */
+export const JourneyCreateInputSchema = z.object({
+  workspaceId: Id,
+  title: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(2000).default(""),
+  journeyType: z.enum(JOURNEY_TYPES),
+  visibility: z.enum(JOURNEY_VISIBILITIES).default("workspace"),
+  structure: JourneyCreateStructureSchema,
+}).strict();
+export type JourneyCreateInput = z.infer<typeof JourneyCreateInputSchema>;
+
+/** Gateway body: the create input tagged so it can't be confused with an apply. */
+export const JourneyCreateRequestSchema = JourneyCreateInputSchema.extend({ kind: z.literal("create_journey") }).strict();
+
+/** "Discover (2 steps), Buy (1 step)" — the approval card's skeleton line. */
+export function formatJourneySkeletonStages(stages: ReadonlyArray<{ name: string; steps: readonly unknown[] }>): string {
+  return stages.map((stage) => `${stage.name} (${stage.steps.length} step${stage.steps.length === 1 ? "" : "s"})`).join(", ");
+}
+
 export const JourneyActionSchema = z.discriminatedUnion("kind", [
   JourneyProposeActionSchema,
   JourneyApplyActionSchema,
   KgIngestUrlActionSchema,
+  JourneyCreateRequestSchema,
 ]);
 export type JourneyAction = z.infer<typeof JourneyActionSchema>;
 export type JourneyActionKind = JourneyAction["kind"];
@@ -147,6 +200,7 @@ export const ApplyJourneyToolInput = JourneyApplyActionSchema.omit({ kind: true 
   preview: Preview,
 });
 export const IngestUrlToolInput = KgIngestUrlActionSchema.omit({ kind: true }).extend({ preview: Preview });
+export const CreateJourneyToolInput = JourneyCreateInputSchema.extend({ preview: Preview });
 
 // ── Reads ───────────────────────────────────────────────────────────────────
 export const JourneyReadRequestSchema = z.discriminatedUnion("op", [

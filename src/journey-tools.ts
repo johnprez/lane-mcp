@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   ApplyJourneyToolInput,
+  CreateJourneyToolInput,
   IngestUrlToolInput,
   ProposeJourneyToolInput,
 } from "./lane/journey-action-contracts.js";
@@ -30,6 +31,7 @@ export const JOURNEY_TOOL_NAMES = [
   "lane_propose_journey_changes",
   "lane_apply_journey_proposal",
   "lane_ingest_url",
+  "lane_create_journey",
 ] as const;
 
 type Outcome = Awaited<ReturnType<LaneSession["journeyCall"]>>;
@@ -104,6 +106,14 @@ export function registerJourneyTools(server: McpServer, session: LaneSession): v
     inputSchema: z.object({ workspaceId: z.string().uuid() }),
     annotations: read,
   }, async ({ workspaceId }) => reply(await session.journeyCall("kg", { op: "sources", workspaceId })));
+
+  server.registerTool("lane_create_journey", {
+    title: "Create a journey",
+    description: "Create a new, empty journey map in a workspace: title, type, visibility, stages (each with its step names, in order) and rows. No cards — after it's created, put the cards (touchpoints, pains, emotions…) into lane_propose_journey_changes on the new journeyId so the user reviews them. Show the user the skeleton and get their go-ahead first (preview:true shows it without creating anything). Drafting from a document the user shared? Use its own stage/step names and cite it in the proposal's rationale.",
+    inputSchema: CreateJourneyToolInput,
+    // Re-sending the same approved create returns the journey it already made.
+    annotations: { ...write, idempotentHint: true },
+  }, async ({ preview, ...input }) => reply(await session.journeyCall("apply-journey", { action: { kind: "create_journey", ...input }, preview })));
 
   server.registerTool("lane_propose_journey_changes", {
     title: "Propose journey changes",

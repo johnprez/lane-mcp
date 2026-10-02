@@ -163,3 +163,26 @@ export function ingestEstimateMarkdown(url: string, estimate: EstimateLike): str
   const usd = estimate.totalUsd === 0 ? "no AI cost (keyword index only)" : `about $${estimate.totalUsd.toFixed(4)} (embedding $${estimate.embeddingUsd.toFixed(4)} + extraction $${estimate.extractionUsd.toFixed(4)})`;
   return `Reading ${url} at depth \`${estimate.depth}\` is estimated at ~${estimate.tokens.toLocaleString("en-US")} tokens, ${usd}. The real size is only known once the page is fetched.`;
 }
+
+type SkeletonLike = {
+  title: string;
+  journeyType: string;
+  visibility: string;
+  structure: { stages: Array<{ name: string; steps: readonly string[] }>; rows: Array<{ name: string; rowType: string }> };
+};
+
+/** The new map's skeleton, for a create preview or receipt: stages › steps, then rows. No cards. */
+export function journeySkeletonMarkdown(input: SkeletonLike): string {
+  const steps = input.structure.stages.reduce((sum, stage) => sum + stage.steps.length, 0);
+  const lines = [
+    `**${input.title}** — ${input.journeyType.replace(/_/g, " ")}, ${input.visibility === "restricted" ? "restricted" : "visible to the workspace"}`,
+    `${input.structure.stages.length} stage${input.structure.stages.length === 1 ? "" : "s"}, ${steps} step${steps === 1 ? "" : "s"}, ${input.structure.rows.length} row${input.structure.rows.length === 1 ? "" : "s"}, no cards yet.`,
+    "",
+    "Stages › steps:",
+    ...input.structure.stages.map((stage) => `- ${stage.name} › ${stage.steps.join(" · ")}`),
+    "",
+    "Rows:",
+    ...input.structure.rows.map((row) => `- ${row.name} (${row.rowType.replace(/_/g, " ")})`),
+  ];
+  return lines.join("\n");
+}

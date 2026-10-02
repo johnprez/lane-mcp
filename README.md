@@ -174,6 +174,7 @@ know what's possible.
 | **Journeys** (`lane_list_journeys`, `lane_get_journey`) | Lists a workspace's journeys; opens one as an interactive grid (stages › steps × rows, with card titles). |
 | **Knowledge** (`lane_kg_search`, `lane_kg_explain`, `lane_kg_sources`) | Searches what Lane has read, with cited excerpts (treated as untrusted data), explains an entity's relations, and lists sources. |
 | **Journey proposals** (`lane_propose_journey_changes`, `lane_apply_journey_proposal`) | Claude stores a proposal (changes nothing); the journey card shows each item with a checkbox and Accept / Reject. Supports **preview**. Needs a read-write token. |
+| **Create a journey** (`lane_create_journey`) | Creates a new, empty journey map — stages with their steps, and rows; no cards. **preview** shows the skeleton first. Cards come next as a proposal you review. Needs a read-write token. |
 | **Add a link** (`lane_ingest_url`) | Files a web page into Lane's knowledge for a workspace, project, or journey. **preview** shows the cost estimate first. Needs a read-write token. |
 
 ### Everything Claude can change for you
