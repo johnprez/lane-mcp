@@ -20,7 +20,7 @@ type Journey = {
   cards: Array<{ id: string; ref: string; title: string; rowId: string; stepId: string; emotion: number | null }>;
 };
 type Item = { id: string; op: string; targetId: string; payload: Row; rationale: string; status: string };
-type Proposal = { proposalId: string; title: string; summary: string; status: string; items: Item[] };
+type Proposal = { proposalId: string; itemsHash: string; title: string; summary: string; status: string; items: Item[] };
 
 const root = document.getElementById("root")!;
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -57,7 +57,7 @@ function toItems(value: unknown): Item[] {
 
 function setProposal(sc: Row): void {
   proposal = {
-    proposalId: str(sc.proposalId), title: str(sc.title) || "Proposed changes", summary: str(sc.summary),
+    proposalId: str(sc.proposalId), itemsHash: str(sc.itemsHash), title: str(sc.title) || "Proposed changes", summary: str(sc.summary),
     status: str(sc.status) || "pending", items: toItems(sc.items),
   };
   checked = new Set(proposal.items.filter((i) => i.status === "pending").map((i) => i.id));
@@ -224,7 +224,7 @@ async function accept(): Promise<void> {
   const pending = proposal.items.filter((i) => i.status === "pending");
   const all = pending.every((i) => checked.has(i.id));
   const { sc, error } = await call("lane_apply_journey_proposal", {
-    proposalId: proposal.proposalId, preview: false, ...(all ? {} : { itemIds: [...checked] }),
+    proposalId: proposal.proposalId, itemsHash: proposal.itemsHash, preview: false, ...(all ? {} : { itemIds: [...checked] }),
   });
   busy = false;
   if (sc?.applied) {

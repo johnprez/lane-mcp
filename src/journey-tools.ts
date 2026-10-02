@@ -115,10 +115,11 @@ export function registerJourneyTools(server: McpServer, session: LaneSession): v
 
   server.registerTool("lane_apply_journey_proposal", {
     title: "Apply a journey proposal",
-    description: "Apply a stored journey proposal (all pending items, or only itemIds) after the user has approved it. preview:true lists exactly which items would apply without changing anything. Never claim a change happened until this returns applied:true.",
+    description: "Apply a stored journey proposal (all pending items, or only itemIds) after the user has approved it. Pass itemsHash from lane_propose_journey_changes or an apply preview — Lane refuses to apply anything other than what was reviewed. preview:true lists exactly which items would apply (with op counts) without changing anything. Never claim a change happened until this returns applied:true.",
     inputSchema: ApplyJourneyToolInput,
     // Re-applying an applied proposal is a no-op conflict, never a double write.
-    annotations: { ...write, idempotentHint: true },
+    // Proposals can delete cards, so hosts should treat applying as destructive.
+    annotations: { ...write, destructiveHint: true, idempotentHint: true },
     _meta: ui,
   }, async ({ preview, ...action }) => reply(await session.journeyCall("apply-journey", { action: { kind: "apply", ...action }, preview })));
 

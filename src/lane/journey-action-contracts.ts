@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { JourneyProposalItemsSchema } from "./journey-contracts";
+import { JourneyProposalItemsSchema, type JourneyProposalOp } from "./journey-contracts";
 
 /**
  * MCP write + read contracts for journeys and the knowledge graph, shared by
@@ -39,11 +39,77 @@ export const JourneyProposeActionSchema = z.object({
   items: JourneyProposalItemsSchema,
 }).strict();
 
+// ── Informed approval ───────────────────────────────────────────────────────
+/** Every op a journey proposal item can carry (mirrors JourneyProposalItemSchema). */
+export const JOURNEY_PROPOSAL_OPS = [
+  "stage.create", "step.create", "row.create",
+  "card.create", "card.update", "card.move", "card.delete",
+  "block.create", "block.link", "work.link",
+] as const satisfies readonly JourneyProposalOp[];
+
+/** sha256 hex of the stored items (create_journey_proposal's `itemsHash`). */
+export const JourneyItemsHashSchema = z.string().trim().toLowerCase().regex(/^[0-9a-f]{64}$/, "Use the itemsHash returned when the proposal was stored or previewed.");
+
+/**
+ * What the user is approving: one entry per op with how many pending items of
+ * that op will apply. An array (not a record) so it stays Structured-Outputs
+ * friendly. The server recomputes it from the stored items and refuses on any
+ * difference, so the approval card can never under-describe the apply.
+ */
+export const JourneyOpCountsSchema = z.array(z.object({
+  op: z.enum(JOURNEY_PROPOSAL_OPS),
+  count: z.number().int().min(1).max(200),
+}).strict()).min(1).max(JOURNEY_PROPOSAL_OPS.length).refine(
+  (entries) => new Set(entries.map((entry) => entry.op)).size === entries.length,
+  "List each op once.",
+);
+export type JourneyOpCounts = z.infer<typeof JourneyOpCountsSchema>;
+
+export function isDeleteOp(op: string): boolean {
+  return /\.(delete|remove|archive)$/i.test(op);
+}
+
+/** The pending items an apply of `itemIds` (null = every pending item) would touch. */
+export function pendingJourneyItems<T extends { id: string; status: string }>(items: readonly T[], itemIds: readonly string[] | null): T[] {
+  const wanted = itemIds ? new Set(itemIds) : null;
+  return items.filter((item) => item.status === "pending" && (!wanted || wanted.has(item.id)));
+}
+
+/** Op counts for a list of items, in canonical op order. */
+export function journeyOpCounts(items: ReadonlyArray<{ op: string }>): Array<{ op: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item.op, (counts.get(item.op) ?? 0) + 1);
+  const order = (op: string) => {
+    const index = (JOURNEY_PROPOSAL_OPS as readonly string[]).indexOf(op);
+    return index === -1 ? JOURNEY_PROPOSAL_OPS.length : index;
+  };
+  return [...counts.entries()].sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b)).map(([op, count]) => ({ op, count }));
+}
+
+/** "3 card.create, 2 card.delete" */
+export function formatJourneyOpCounts(counts: ReadonlyArray<{ op: string; count: number }>): string {
+  return counts.map((entry) => `${entry.count} ${entry.op}`).join(", ");
+}
+
+/** True when two op-count lists describe exactly the same changes. */
+export function sameJourneyOpCounts(a: ReadonlyArray<{ op: string; count: number }>, b: ReadonlyArray<{ op: string; count: number }>): boolean {
+  const left = new Map(a.map((entry) => [entry.op, entry.count]));
+  const right = new Map(b.map((entry) => [entry.op, entry.count]));
+  if (left.size !== a.length || right.size !== b.length || left.size !== right.size) return false;
+  for (const [op, count] of left) if (right.get(op) !== count) return false;
+  return true;
+}
+
 export const JourneyApplyActionSchema = z.object({
   kind: z.literal("apply"),
   proposalId: Id,
   /** Apply only these items; omit to apply every pending item. */
   itemIds: z.array(Id).min(1).max(200).optional(),
+  /**
+   * The hash returned by propose / apply-preview. Required to apply (preview
+   * may omit it): it binds the apply to exactly the items that were reviewed.
+   */
+  itemsHash: JourneyItemsHashSchema.optional(),
 }).strict();
 
 export const KgIngestUrlActionSchema = z.object({
@@ -76,7 +142,10 @@ export type JourneyActionRequest = z.infer<typeof JourneyActionRequestSchema>;
  */
 const Preview = z.boolean().optional().describe("When true, validate and show what WOULD happen without storing, applying or registering anything.");
 export const ProposeJourneyToolInput = JourneyProposeActionSchema.omit({ kind: true }).extend({ preview: Preview });
-export const ApplyJourneyToolInput = JourneyApplyActionSchema.omit({ kind: true }).extend({ preview: Preview });
+export const ApplyJourneyToolInput = JourneyApplyActionSchema.omit({ kind: true }).extend({
+  itemsHash: JourneyItemsHashSchema.optional().describe("Required unless preview:true — the itemsHash from lane_propose_journey_changes or an apply preview."),
+  preview: Preview,
+});
 export const IngestUrlToolInput = KgIngestUrlActionSchema.omit({ kind: true }).extend({ preview: Preview });
 
 // ── Reads ───────────────────────────────────────────────────────────────────
