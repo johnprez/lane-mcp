@@ -45,6 +45,9 @@ export const JOURNEY_PROPOSAL_OPS = [
   "stage.create", "step.create", "row.create",
   "card.create", "card.update", "card.move", "card.delete",
   "block.create", "block.link", "work.link",
+  "flow.create", "flow.update", "flow.delete",
+  "flow_node.create", "flow_node.update", "flow_node.delete",
+  "flow_edge.create", "flow_edge.delete",
 ] as const satisfies readonly JourneyProposalOp[];
 
 /** sha256 hex of the stored items (create_journey_proposal's `itemsHash`). */
@@ -206,6 +209,15 @@ export const CreateJourneyToolInput = JourneyCreateInputSchema.extend({ preview:
 export const JourneyReadRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("list"), workspaceId: Id }).strict(),
   z.object({ op: z.literal("get"), journeyId: Id }).strict(),
+  // Look at screens (images come back as MCP image content; max 4 per call).
+  z.object({
+    op: z.literal("screens"),
+    journeyId: Id,
+    screenIds: z.array(Id).min(1).max(4),
+    detail: z.enum(["standard", "full"]).default("standard"),
+  }).strict(),
+  // One flow's logic (decision/logic map on a step or card) as a text outline.
+  z.object({ op: z.literal("flow"), journeyId: Id, flowId: Id }).strict(),
 ]);
 export type JourneyReadRequest = z.infer<typeof JourneyReadRequestSchema>;
 

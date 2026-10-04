@@ -560,6 +560,8 @@ const JourneyProposalViewSchema = z
     itemsHash: z.string().regex(/^[0-9a-f]{64}$/),
     expiresAt: z.string().max(40),
     items: z.array(JourneyProposalItemViewSchema).max(200),
+    // Text outlines of flows the proposal creates (the logic before accepting).
+    flowOutlines: z.array(z.object({ title: z.string().max(200), outline: z.string().max(12_000) }).strict()).max(20).optional(),
   })
   .strict();
 

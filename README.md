@@ -172,6 +172,8 @@ know what's possible.
 | **Dependencies** (`lane_edit_dependencies`) | View, add, or remove activity dependencies for a project. |
 | **Tasks board** (`lane_view_tasks`) | Interactive board — activities grouped by lane with progress, owners, and their checklist tasks. |
 | **Journeys** (`lane_list_journeys`, `lane_get_journey`) | Lists a workspace's journeys; opens one as an interactive grid (stages › steps × rows, with card titles). |
+| **Screens** (`lane_view_screens`) | Looks at up to 4 of a journey's screens: title, caption, where each sits, and the image itself (no URLs). |
+| **Flows** (`lane_view_flow`) | Reads one flow — the decision/logic map on a step or card — as an outline: decisions and labelled branches (happy / unhappy / alternate), screens, exits, links and issues. Links into journeys you can't see read "Restricted journey". |
 | **Knowledge** (`lane_kg_search`, `lane_kg_explain`, `lane_kg_sources`) | Searches what Lane has read, with cited excerpts (treated as untrusted data), explains an entity's relations, and lists sources. |
 | **Journey proposals** (`lane_propose_journey_changes`, `lane_apply_journey_proposal`) | Claude stores a proposal (changes nothing); the journey card shows each item with a checkbox and Accept / Reject. Supports **preview**. Needs a read-write token. |
 | **Create a journey** (`lane_create_journey`) | Creates a new, empty journey map — stages with their steps, and rows; no cards. **preview** shows the skeleton first. Cards come next as a proposal you review. Needs a read-write token. |

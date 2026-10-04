@@ -140,14 +140,14 @@ export class LaneSession {
   async journeyCall(
     endpoint: "journey" | "kg" | "apply-journey" | "ingest",
     body: Record<string, unknown>,
-  ): Promise<{ ok: true; result: Record<string, unknown>; text: string } | { ok: false; status: number; error: string }> {
+  ): Promise<{ ok: true; result: Record<string, unknown>; text: string; images?: Array<{ mimeType: string; base64: string }> } | { ok: false; status: number; error: string }> {
     const response = await fetch(`${this.apiUrl}/api/mcp/${endpoint}`, {
       method: "POST",
       headers: { authorization: `Bearer ${this.token}`, "content-type": "application/json" },
       body: JSON.stringify(body),
     });
     const text = await response.text();
-    let payload: { result?: Record<string, unknown>; text?: string; error?: string };
+    let payload: { result?: Record<string, unknown>; text?: string; error?: string; images?: unknown };
     try {
       payload = JSON.parse(text) as typeof payload;
     } catch {
@@ -155,7 +155,16 @@ export class LaneSession {
     }
     if (response.status === 401) return { ok: false, status: 401, error: "Lane rejected this token. Regenerate a PAT in Settings → Connect Claude and update your config." };
     if (!response.ok || !payload.result) return { ok: false, status: response.status, error: payload.error ?? `Lane could not complete that request (HTTP ${response.status}).` };
-    return { ok: true, result: payload.result, text: payload.text ?? "" };
+    // Screen images (lane_view_screens): bytes only, re-checked before use.
+    const images = Array.isArray(payload.images)
+      ? payload.images.flatMap((image) => {
+        const entry = image as { mimeType?: unknown; base64?: unknown };
+        return typeof entry.base64 === "string" && typeof entry.mimeType === "string" && /^image\/(png|jpeg|webp|gif)$/.test(entry.mimeType)
+          ? [{ mimeType: entry.mimeType, base64: entry.base64 }]
+          : [];
+      }).slice(0, 4)
+      : [];
+    return { ok: true, result: payload.result, text: payload.text ?? "", ...(images.length ? { images } : {}) };
   }
 
   /** Validate export access and return a browser-openable download URL. */

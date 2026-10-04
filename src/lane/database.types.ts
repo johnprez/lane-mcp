@@ -30,7 +30,7 @@ export type JourneyVisibility = "workspace" | "restricted";
 export type JourneyAccessLevel = "view" | "edit";
 export type JourneyRowType =
   | "text" | "touchpoint" | "emotion" | "pain" | "gain" | "opportunity" | "insight" | "solution"
-  | "frontstage" | "backstage" | "people" | "linked_work" | "metric" | "image" | "freeform" | "flow";
+  | "frontstage" | "backstage" | "people" | "linked_work" | "metric" | "image" | "freeform" | "flow" | "screens";
 export type JourneyCardState = "current" | "future" | "stay" | "remove" | "create";
 export type JourneyCanvasObjectKind = "sticky" | "shape" | "text" | "frame" | "image";
 export type KgSourceStatus =
@@ -567,7 +567,7 @@ export type Database = {
         { id: string; workspace_id: string; journey_id: string; project_id: string; created_by: string; created_at: string }
       >;
       journey_share_links: TableDefinition<
-        { id: string; workspace_id: string; journey_id: string; token_hash: string; token_prefix: string; include_evidence: boolean; expires_at: string | null; revoked_at: string | null; created_by: string; created_at: string; last_accessed_at: string | null; access_count: number }
+        { id: string; workspace_id: string; journey_id: string; token_hash: string; token_prefix: string; include_evidence: boolean; include_screens: boolean; include_flows: boolean; expires_at: string | null; revoked_at: string | null; created_by: string; created_at: string; last_accessed_at: string | null; access_count: number }
       >;
       journey_events: TableDefinition<
         { id: number; workspace_id: string; journey_id: string; actor_user_id: string | null; entity_type: string; entity_id: string | null; action: string; metadata: Json; created_at: string }
@@ -650,6 +650,39 @@ export type Database = {
           evidence_kind: "url" | "note" | "image" | "file" | "quote"; title: string; url: string | null; body: string;
           source_label: string; storage_path: string | null; mime_type: string | null; byte_size: number | null;
           embed: Json; kg_chunk_id: string | null; version: number; created_by: string;
+        }
+      >;
+      journey_screens: TableDefinition<
+        Timestamped & {
+          id: string; workspace_id: string; journey_id: string; step_id: string | null; card_id: string | null;
+          title: string; caption: string; source_kind: "upload" | "figma"; storage_path: string | null; thumb_path: string | null;
+          mime_type: string | null; byte_size: number | null; width: number | null; height: number | null; figma_url: string | null;
+          sort_key: string; version: number; created_by: string;
+        }
+      >;
+      // Journey flows (20261008120000). Select-only; writes go through the RPCs.
+      journey_flows: TableDefinition<
+        Timestamped & {
+          id: string; workspace_id: string; journey_id: string; step_id: string | null; card_id: string | null;
+          title: string; description: string; sort_key: string; version: number; created_by: string;
+        }
+      >;
+      journey_flow_nodes: TableDefinition<
+        Timestamped & {
+          id: string; workspace_id: string; journey_id: string; flow_id: string;
+          kind: "entry" | "decision" | "screen" | "action" | "system" | "note" | "exit";
+          label: string; body: string; x: number; y: number; w: number | null; screen_id: string | null;
+          link_kind: "step" | "card" | "flow" | "journey" | null; target_journey_id: string | null;
+          target_step_id: string | null; target_card_id: string | null; target_flow_id: string | null;
+          version: number; created_by: string;
+        }
+      >;
+      journey_flow_edges: TableDefinition<
+        Timestamped & {
+          id: string; workspace_id: string; journey_id: string; flow_id: string; from_node_id: string; to_node_id: string;
+          label: string; path_class: "happy" | "unhappy" | "alternate" | "neutral";
+          source_side: "n" | "e" | "s" | "w" | null; target_side: "n" | "e" | "s" | "w" | null;
+          sort_key: string; version: number; created_by: string;
         }
       >;
       journey_comments: TableDefinition<
@@ -1264,12 +1297,12 @@ export type Database = {
         Returns: Json;
       };
       delete_journey_entity: {
-        Args: { p_workspace_id: string; p_journey_id: string; p_entity: "stage" | "step" | "row" | "card" | "object" | "connector"; p_id: string };
+        Args: { p_workspace_id: string; p_journey_id: string; p_entity: "stage" | "step" | "row" | "card" | "object" | "connector" | "flow"; p_id: string };
         Returns: string;
       };
       duplicate_journey_as_future: { Args: { p_workspace_id: string; p_journey_id: string; p_title?: string | null }; Returns: Json };
       create_journey_share: {
-        Args: { p_workspace_id: string; p_journey_id: string; p_token_hash: string; p_token_prefix: string; p_include_evidence: boolean; p_expires_at: string | null };
+        Args: { p_workspace_id: string; p_journey_id: string; p_token_hash: string; p_token_prefix: string; p_include_evidence: boolean; p_expires_at: string | null; p_include_screens?: boolean; p_include_flows?: boolean };
         Returns: Json;
       };
       revoke_journey_share: { Args: { p_workspace_id: string; p_share_id: string }; Returns: string };
@@ -1321,6 +1354,49 @@ export type Database = {
         };
         Returns: Json;
       };
+      // Journey screens (20261007120000).
+      register_journey_screen: {
+        Args: {
+          p_workspace_id: string; p_journey_id: string; p_step_id: string | null; p_card_id: string | null; p_title: string; p_caption: string;
+          p_storage_path: string; p_thumb_path: string | null; p_mime_type: string; p_byte_size: number; p_width: number | null; p_height: number | null; p_sort_key?: string;
+        };
+        Returns: Json;
+      };
+      add_journey_figma_screen: {
+        Args: { p_workspace_id: string; p_journey_id: string; p_step_id: string | null; p_card_id: string | null; p_title: string; p_caption: string; p_figma_url: string; p_sort_key?: string };
+        Returns: Json;
+      };
+      update_journey_screen: {
+        Args: {
+          p_workspace_id: string; p_journey_id: string; p_screen_id: string; p_expected_version: number; p_title: string; p_caption: string;
+          p_step_id: string | null; p_card_id: string | null; p_sort_key: string;
+        };
+        Returns: Json;
+      };
+      delete_journey_screen: { Args: { p_workspace_id: string; p_journey_id: string; p_screen_id: string }; Returns: Json };
+      relocate_journey_screens: {
+        Args: { p_workspace_id: string; p_journey_id: string; p_scope: "card" | "row" | "step" | "stage"; p_id: string; p_target_step_id?: string | null };
+        Returns: Json;
+      };
+      // Journey flows (20261008120000).
+      upsert_journey_flow: {
+        Args: {
+          p_workspace_id: string; p_journey_id: string; p_flow_id: string | null; p_expected_version: number | null;
+          p_step_id: string | null; p_card_id: string | null; p_title: string; p_description: string; p_sort_key: string;
+        };
+        Returns: Json;
+      };
+      apply_journey_flow_edits: { Args: { p_workspace_id: string; p_journey_id: string; p_flow_id: string; p_edits: Json }; Returns: Json };
+      apply_journey_flow_ops: { Args: { p_workspace_id: string; p_journey_id: string; p_flow_id: string; p_ops: Json }; Returns: Json };
+      read_journey_flow: { Args: { p_workspace_id: string; p_journey_id: string; p_flow_id: string }; Returns: Json };
+      resolve_journey_flow_links: { Args: { p_workspace_id: string; p_journey_id: string; p_flow_id?: string | null }; Returns: Json };
+      journey_flow_inbound: { Args: { p_workspace_id: string; p_journey_id: string }; Returns: Json };
+      relocate_journey_flows: {
+        Args: { p_workspace_id: string; p_journey_id: string; p_scope: "card" | "row" | "step" | "stage"; p_id: string; p_target_step_id?: string | null };
+        Returns: Json;
+      };
+      list_journey_asset_orphans: { Args: { p_limit?: number }; Returns: Json };
+      clear_journey_asset_orphans: { Args: { p_ids: number[] }; Returns: number };
       add_journey_comment: {
         Args: { p_workspace_id: string; p_journey_id: string; p_card_id: string | null; p_parent_id: string | null; p_body: string; p_mentions: string[] };
         Returns: Json;

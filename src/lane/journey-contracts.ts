@@ -22,6 +22,28 @@ export const JOURNEY_ROW_TYPES = [
   "frontstage", "backstage", "people", "linked_work", "metric", "image", "freeform", "flow",
 ] as const;
 
+export const FLOW_NODE_KINDS = ["entry", "decision", "screen", "action", "system", "note", "exit"] as const;
+export const FLOW_PATH_CLASSES = ["happy", "unhappy", "alternate", "neutral"] as const;
+
+const Coord = z.number().finite().min(-1_000_000).max(1_000_000);
+/** Entry/exit link. No journeyId = this journey; targetRef = a step/card/flow made earlier in the proposal. */
+const FlowLinkPayload = z.object({
+  kind: z.enum(["step", "card", "flow", "journey"]),
+  journeyId: Uuid.optional(),
+  targetRef: Ref.optional(),
+  targetId: Uuid.optional(),
+}).strict();
+const FlowNodeFields = {
+  kind: z.enum(FLOW_NODE_KINDS),
+  label: z.string().trim().max(160),
+  body: z.string().max(2000).optional(),
+  x: Coord.optional(),
+  y: Coord.optional(),
+  screenRef: Ref.optional(),
+  screenId: Uuid.optional(),
+  link: FlowLinkPayload.optional(),
+};
+
 const Common = { ref: Ref.optional(), rationale: z.string().max(1000).optional(), citedChunkIds: z.array(Uuid).max(10).optional() };
 
 export const JourneyProposalItemSchema = z.discriminatedUnion("op", [
@@ -65,6 +87,36 @@ export const JourneyProposalItemSchema = z.discriminatedUnion("op", [
       targetKind: z.enum(["work_item", "checklist_item", "milestone"]), targetId: Uuid,
     }).strict(),
   }).strict(),
+  // ── Flows (decision & logic maps on a step or card) ──
+  z.object({
+    ...Common, op: z.literal("flow.create"),
+    payload: z.object({
+      title: z.string().trim().min(1).max(120), description: z.string().max(2000).optional(),
+      stepRef: Ref.optional(), stepId: Uuid.optional(), cardRef: Ref.optional(), cardId: Uuid.optional(),
+    }).strict(),
+  }).strict(),
+  z.object({
+    ...Common, op: z.literal("flow.update"), targetId: Uuid,
+    payload: z.object({ title: z.string().trim().min(1).max(120).optional(), description: z.string().max(2000).optional() }).strict(),
+  }).strict(),
+  z.object({ ...Common, op: z.literal("flow.delete"), targetId: Uuid, payload: z.object({}).strict() }).strict(),
+  z.object({
+    ...Common, op: z.literal("flow_node.create"),
+    payload: z.object({ flowRef: Ref.optional(), flowId: Uuid.optional(), ...FlowNodeFields }).strict(),
+  }).strict(),
+  z.object({
+    ...Common, op: z.literal("flow_node.update"), targetId: Uuid,
+    payload: z.object({ ...FlowNodeFields, kind: FlowNodeFields.kind.optional(), label: FlowNodeFields.label.optional() }).strict(),
+  }).strict(),
+  z.object({ ...Common, op: z.literal("flow_node.delete"), targetId: Uuid, payload: z.object({}).strict() }).strict(),
+  z.object({
+    ...Common, op: z.literal("flow_edge.create"),
+    payload: z.object({
+      fromRef: Ref.optional(), fromId: Uuid.optional(), toRef: Ref.optional(), toId: Uuid.optional(),
+      label: z.string().trim().max(80).optional(), pathClass: z.enum(FLOW_PATH_CLASSES).optional(),
+    }).strict(),
+  }).strict(),
+  z.object({ ...Common, op: z.literal("flow_edge.delete"), targetId: Uuid, payload: z.object({}).strict() }).strict(),
 ]);
 export type JourneyProposalItem = z.infer<typeof JourneyProposalItemSchema>;
 export type JourneyProposalOp = JourneyProposalItem["op"];
@@ -75,9 +127,13 @@ export const JourneyProposalItemsSchema = z.array(JourneyProposalItemSchema).min
     const seen = new Set<string>();
     items.forEach((item, index) => {
       const payload = item.payload as Record<string, unknown>;
-      for (const key of ["stageRef", "rowRef", "stepRef", "blockRef", "cardRef", "sourceRef"]) {
+      for (const key of ["stageRef", "rowRef", "stepRef", "blockRef", "cardRef", "sourceRef", "flowRef", "nodeRef", "fromRef", "toRef", "screenRef"]) {
         const ref = payload[key];
         if (typeof ref === "string" && !seen.has(ref)) ctx.addIssue({ code: "custom", path: [index, "payload", key], message: `Unknown ref ${ref}` });
+      }
+      const link = payload.link as { targetRef?: unknown } | undefined;
+      if (typeof link?.targetRef === "string" && !seen.has(link.targetRef)) {
+        ctx.addIssue({ code: "custom", path: [index, "payload", "link", "targetRef"], message: `Unknown ref ${link.targetRef}` });
       }
       if (item.ref) {
         if (seen.has(item.ref)) ctx.addIssue({ code: "custom", path: [index, "ref"], message: `Duplicate ref ${item.ref}` });
